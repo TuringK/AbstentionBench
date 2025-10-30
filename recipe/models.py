@@ -220,7 +220,7 @@ class VLLMChatModelBase(InferenceModel):
 class Llama3_1_8B_Instruct(VLLMChatModelBase):
     def __init__(
         self,
-        local_model_path="/large_experiments/robust_vlm/abstention-bench/huggingface/Llama-3.1-8B-Instruct",
+        local_model_path=None,
         temperature=0.8,
         top_p=0.95,
         max_tokens=None,
