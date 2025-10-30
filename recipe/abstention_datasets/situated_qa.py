@@ -15,9 +15,12 @@ class SituatedQAGeoDataset(AbstentionDataset):
     def __init__(self, max_num_samples=None):
         super().__init__()
 
+        # Load dataset directly from github repo due to depreciation of scrpit based dataset loading
         self.dataset = datasets.load_dataset(
-            "siyue/SituatedQA", "geo", trust_remote_code=True
-        )["test"]
+            "json",
+            data_files="https://raw.githubusercontent.com/mikejqzhang/SituatedQA/refs/heads/master/data/qa_data/geo.train.jsonl",
+            split="train"
+        )
 
         # Construct the underspecified dataset (which needs to be deduplicated)
         visited_questions = set()

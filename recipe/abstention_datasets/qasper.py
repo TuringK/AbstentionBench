@@ -36,7 +36,13 @@ class QASPERDataset(AbstentionDataset):
             self.dataset = datasets.Dataset.load_from_disk(data_dir)
         except:
             logger.info("Fetching and processing allenai/qasper")
-            dataset = datasets.load_dataset("allenai/qasper")["test"]
+
+            # Load dataset from parquet conversion dataset due to depreciation of scrpit based dataset loading
+            dataset = datasets.load_dataset(
+                "allenai/qasper", 
+                split="test",
+                revision="refs/pr/5"
+            )
 
             self.dataset = self._prepare_dataset(dataset)
 
