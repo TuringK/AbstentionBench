@@ -6,7 +6,7 @@
 No GPU needed for setting up the environment.
 
 ## Install Mamba
-1. Go to miniforge3 releases (`https://github.com/conda-forge/miniforge/releases`) and download the `Miniforge3-25.3.1-0-Linux-x86_64.sh` script. Do this by `wget` or an FTP server.
+1. Go to miniforge3 releases (`https://github.com/conda-forge/miniforge/releases`) and download the `Miniforge3-25.3.1-0-Linux-x86_64.sh` script. Do this by `wget` (`wget https://github.com/conda-forge/miniforge/releases/Miniforge3-25.3.1-0-Linux-x86_64.sh`) or an FTP server.
 2. Give execution rights (`chmod +x ./Miniforge3-25.3.1-0-Linux-x86_64.sh`) and run the script `./Miniforge3-25.3.1-0-Linux-x86_64.sh`
 
 Mamba will ask for a default install directory, I would NOT recommend setting it to your home `/~` (default) to prevent hitting the file quota. I just put mine in on parscratch `/mnt/parscratch/users/[YOUR_USERNAME]/private`
