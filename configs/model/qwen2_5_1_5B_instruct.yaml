@@ -1,15 +1,14 @@
 # @package _global_
 
-model_name: Qwen2_5_1.5B_Instruct
+model_name: Qwen2_5_1_5B_Instruct
 
 module:
   _target_: recipe.models.${model_name}
-  local_model_path: "/large_experiments/robust_vlm/abstention-bench/huggingface/Qwen2.5-1.5B-Instruct"
   temperature: 0.8
   top_p: 0.95
 
   max_tokens: 4000
   convert_prompt_to_chat: True
   tensor_parallel_size: 1 # can fit on 1 gpu
-  max_model_len: 3768 # context window
+  max_model_len: 32768 # context window
   enforce_eager: True

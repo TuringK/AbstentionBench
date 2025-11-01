@@ -12,5 +12,5 @@ module:
   max_tokens: 4000
   convert_prompt_to_chat: True
   tensor_parallel_size: 8 # Recommended between 4 and max number of available GPUs
-  max_model_len: 3768 # Context window
+  max_model_len: 32768 # Context window
   enforce_eager: True

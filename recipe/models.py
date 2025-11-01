@@ -396,7 +396,6 @@ class Qwen2_5_32B_Instruct(VLLMChatModelBase):
 class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
     def __init__(
         self,
-        local_model_path="/large_experiments/robust_vlm/abstention-bench/huggingface/Qwen2.5-1.5B-Instruct",
         temperature=0.8,
         top_p=0.95,
         max_tokens=None,
@@ -407,11 +406,9 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
         enforce_eager=True,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
-        model_path = (
-            local_model_path if local_model_path is not None else _VLLM_MODEL_NAME
-        )
+
         super().__init__(
-            model_path=model_path,
+            model_path=_VLLM_MODEL_NAME,
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
