@@ -4,7 +4,7 @@ model_name: Llama3_1_8B_Instruct
 
 module:
   _target_: recipe.models.${model_name}
-  local_model_path: /large_experiments/robust_vlm/abstention-bench/huggingface/Llama-3.1-8B-Instruct
+  local_model_path: null
   temperature: 0.8
   top_p: 0.95
   # 99.9% of responses are below 4k tokens; 
