@@ -4,7 +4,7 @@
 
 # List of datasets (excluding dummy)
 datasets=("alcuna" "bbq" "big_bench_disambiguate" "big_bench_known_unknowns" "coconot" "falseqa" "freshqa" "gpqa" "gsm8k" "kuq" "mediq" "mmlu_history" "mmlu_math" "moralchoice" "musique" "qaqa" "qasper" "self_aware" "situated_qa" "squad2" "umwp" "worldsense")
-models=("gemma_3_1b_it" "qwen2_5_1_5B_instruct")
+models=("gemma_3_1b_it" "qwen2_5_1_5B_instruct" "allenai_llama_3_1_tulu_3_1_8B")
 
 # check if models exists
 for model in "${models[@]}"; do
@@ -23,7 +23,7 @@ for model in "${models[@]}"; do
     for dataset in "${datasets[@]}"; do
         echo "======================================"
         echo "Model: $dataset ($model_iteration/${#models[@]})" 
-        echo "Dataset: $dataset ($dataset_iteration/${#dataset[@]})"
+        echo "Dataset: $dataset ($dataset_iteration/${#datasets[@]})"
         echo "======================================"
 
         python main.py mode=local dataset=${dataset} model=${model} common_dir=TestAbstention abstention_detector=contains_abstention_keyword run_single_job_for_inference_and_judge=True

@@ -1,12 +1,13 @@
-model_name: Gemma_3_1B_Instruct
+model_name: Allenai_Llama_3_1_Tulu_3_1_8B
 
 module:
   _target_: recipe.models.${model_name}
+  local_model_path: null
   temperature: 0.8
   top_p: 0.95
 
   max_tokens: 4000
   convert_prompt_to_chat: True
   tensor_parallel_size: 1
-  max_model_len: 32768
-  enforce_eager: True
+  max_model_len: 32768 
+  use_system_prompt: False
