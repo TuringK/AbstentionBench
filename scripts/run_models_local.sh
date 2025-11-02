@@ -22,7 +22,7 @@ model_iteration=1
 for model in "${models[@]}"; do
     for dataset in "${datasets[@]}"; do
         echo "======================================"
-        echo "Model: $dataset ($model_iteration/${#models[@]})" 
+        echo "Model: $model ($model_iteration/${#models[@]})" 
         echo "Dataset: $dataset ($dataset_iteration/${#datasets[@]})"
         echo "======================================"
 
