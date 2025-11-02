@@ -1,3 +1,5 @@
+# @package _global_
+
 model_name: Allenai_Llama_3_1_Tulu_3_1_8B
 
 module:

@@ -244,7 +244,6 @@ class Llama3_1_8B_Instruct(VLLMChatModelBase):
             use_system_prompt=use_system_prompt,
         )
 
-
 class Llama3_1_70B_Instruct(VLLMChatModelBase):
     def __init__(
         self,
