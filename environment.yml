@@ -4,7 +4,6 @@ channels:
   - conda-forge
 dependencies:
   - python=3.11
-  - vllm=0.8.3
   - pip
   - ca-certificates
   - openssl
