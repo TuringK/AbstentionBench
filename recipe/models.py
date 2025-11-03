@@ -445,19 +445,18 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
         )
         
 class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
-       def __init__(
+      def __init__(
         self,
+        local_model_path=None,
         temperature=0.8,
         top_p=0.95,
         max_tokens=None,
         convert_prompt_to_chat=True,
         tensor_parallel_size=1,
         max_model_len=32768,
-        gpu_memory_utilization=0.9,
-        enforce_eager=True,
+        use_system_prompt=False,
     ):
         _VLLM_MODEL_NAME = "allenai/Llama-3.1-Tulu-3.1-8B"
-
         super().__init__(
             model_path=_VLLM_MODEL_NAME,
             temperature=temperature,
@@ -466,10 +465,8 @@ class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
             convert_prompt_to_chat=convert_prompt_to_chat,
             tensor_parallel_size=tensor_parallel_size,
             max_model_len=max_model_len,
-            gpu_memory_utilization=gpu_memory_utilization,
-            enforce_eager=enforce_eager,
-        )
-    
+            use_system_prompt=use_system_prompt,
+        )    
 
 ### REASONING MODELS ###
 
