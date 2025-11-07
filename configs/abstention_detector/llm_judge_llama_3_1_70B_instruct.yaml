@@ -1,11 +1,11 @@
 # @package _global_
 
-judge_name: LLMJudge_Gemma_3_1B_Instruct
+judge_name: LLMJudge_Llama_3_1_70B
 
 abstention_detector:
   _target_: recipe.evaluation.LLMJudgeAbstentionDetector
   judge_model:
-    _target_: recipe.models.Gemma_3_1B_Instruct
+    _target_: recipe.models.Llama3_1_70B_Instruct
     # Setting temp. to 0 means we are generating output as
     # arg max {P(yes | context), P(no | context)} in the judge.
     # This also follows the judge setup in prior works like
@@ -14,24 +14,24 @@ abstention_detector:
     top_p: 0.95
     max_tokens: 100
     convert_prompt_to_chat: True
-    tensor_parallel_size: 1
+    tensor_parallel_size: 2
     # This context window is too small for a few (prompt, response) pairs, however,
     # we can't accommodate a larger context window on v100.
     max_model_len: 32768
   save_dir: ${save_dir}
 
 abstention_detector_launcher:
-  gres: gpu:1
+  gres: gpu:2
   nodes: 1
   tasks_per_node: 1
   cpus_per_task: 8
   timeout_min: 400
   partition: gpu
   qos: gpu
-  # mem_gb: 128
-  # slurm_constraint: "volta32gb"
-  # exclude: "learnfair7486"
-  # slurm_srun_args: ["-vv", "--cpu-bind", "none"]
   comment: "abstention-bench eval step"
   additional_parameters:
-    mem: 8G  # Use raw SLURM parameter instead
+    mem: 128G  # Use raw SLURM parameter instead
+  setup:
+    - 'export SLURM_EXPORT_ENV=ALL'
+    - 'module load GCC'
+    - 'module load CUDA/12.4'
