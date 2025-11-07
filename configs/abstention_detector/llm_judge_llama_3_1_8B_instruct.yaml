@@ -28,10 +28,6 @@ abstention_detector_launcher:
   timeout_min: 400
   partition: gpu
   qos: gpu
-  # mem_gb: 128
-  # slurm_constraint: "volta32gb"
-  # exclude: "learnfair7486"
-  # slurm_srun_args: ["-vv", "--cpu-bind", "none"]
   comment: "abstention-bench eval step"
   additional_parameters:
     mem: 16G  # Use raw SLURM parameter instead

@@ -30,7 +30,7 @@ abstention_detector_launcher:
   qos: gpu
   comment: "abstention-bench eval step"
   additional_parameters:
-    mem: 128G  # Use raw SLURM parameter instead
+    mem: 164G  # Use raw SLURM parameter instead
   setup:
     - 'export SLURM_EXPORT_ENV=ALL'
     - 'module load GCC'
