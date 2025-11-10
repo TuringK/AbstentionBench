@@ -9,12 +9,18 @@ gpus: 1
 
 hydra:
   launcher:
-    gpus_per_node: ${gpus}
     tasks_per_node: ${gpus}
     cpus_per_task: 8
-    mem_gb: 480
+    gres: gpu:1
     nodes: 1
     timeout_min: 400
-    max_num_timeout: 5
-    partition: null
+    partition: gpu
+    qos: gpu
     comment: ${project}
+
+    additional_parameters:
+      mem: 8G  # Use raw SLURM parameter instead
+    setup:
+      - 'export SLURM_EXPORT_ENV=ALL'
+      - 'module load GCC'
+      - 'module load CUDA/12.4'

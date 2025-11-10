@@ -151,9 +151,17 @@ class AbstentionWorkflow:
         with clean_env():
             job = executor.submit(main, second_stage_config)
             logger.info(f"Launched eval job! job_id: {job.job_id}")
+            
+            # NOTE: The original code waited for stage-2 (evaluation) to complete
+            #       while still holding the stage-1 (inference) resources .
+            #       Due to limited GPU quota, we now submit stage-2 asynchronously
+            #       and return immediately to free the inference resources.
+            
+            return
+        
             # Wait for job completion
-            output = job.result()
-        logger.info("Eval job (stage 2) complete.")
+            # output = job.result()
+        # logger.info("Eval job (stage 2) complete.")
 
     def create_second_stage_config(self):
         inference_logs_path = os.path.join(
