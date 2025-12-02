@@ -341,6 +341,27 @@ class OLMo_7B_0724_Instruct(VLLMChatModelBase):
             tensor_parallel_size=tensor_parallel_size,
         )
 
+class OLMo_3_7B_Instruct(VLLMChatModelBase):
+    def __init__(
+        self,
+        temperature=0.6,
+        top_p=0.95,
+        max_tokens=None,
+        convert_prompt_to_chat=True,
+        max_model_len=4096,
+        tensor_parallel_size=1,
+    ):
+        _VLLM_MODEL_NAME = "allenai/Olmo-3-7B-Instruct"
+        super().__init__(
+            model_path=_VLLM_MODEL_NAME,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            convert_prompt_to_chat=convert_prompt_to_chat,
+            max_model_len=max_model_len,
+            tensor_parallel_size=tensor_parallel_size,
+        )
+
 
 class Mistral_7B_Instruct_v0_3(VLLMChatModelBase):
     def __init__(
