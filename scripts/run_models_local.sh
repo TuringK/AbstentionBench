@@ -1,12 +1,11 @@
 #!/bin/bash
 # Script to run all datasets sequentially on the current GPU node
-# 
 
 # List of datasets (excluding dummy)
 datasets=("alcuna" "bbq" "big_bench_disambiguate" "big_bench_known_unknowns" "coconot" "falseqa" "freshqa" "gpqa" "gsm8k" "kuq" "mediq" "mmlu_history" "mmlu_math" "moralchoice" "musique" "qaqa" "qasper" "self_aware" "situated_qa" "squad2" "umwp" "worldsense")
-models=("gemma_3_1b_it" "qwen2_5_1_5B_instruct" "allenai_llama_3_1_tulu_3_1_8B")
+models=("gemma_3_1b" "qwen2_5_1_5B_instruct" "allenai_llama_3_1_tulu_3_1_8B")
 
-# check if models exists
+# Check if models exists
 for model in "${models[@]}"; do
     if [ ! -f "$(pwd)/configs/model/${model}.yaml" ]; then
         echo "ERROR: ${model} doesn't exist"
@@ -16,10 +15,10 @@ for model in "${models[@]}"; do
 done
 
 # Run each model and each dataset sequentially
-dataset_iteration=1
 model_iteration=1
 
 for model in "${models[@]}"; do
+    dataset_iteration=1
     for dataset in "${datasets[@]}"; do
         echo "======================================"
         echo "Model: $model ($model_iteration/${#models[@]})" 
@@ -41,4 +40,5 @@ for model in "${models[@]}"; do
     done
     model_iteration=$((model_iteration + 1))
 done
-echo "Completd running ${models} on all datasets"
+
+echo "Completed running ${models} on all datasets"

@@ -8,7 +8,7 @@ r1 = Results(
 )
 
 table_df = AbstentionF1ScoreTable(results=r1).table_df
-table_df.to_csv("analysis/all_models_llama_3_1_8B_judge.csv", index=False)
+# table_df.to_csv("analysis/all_models_llama_3_1_8B_judge.csv", index=False)
 
 unique_models = table_df['model_name_formatted'].unique()
 for model in unique_models:
