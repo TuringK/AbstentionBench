@@ -11,4 +11,4 @@ module:
   max_tokens: 4000
   convert_prompt_to_chat: True
   tensor_parallel_size: 1
-  max_model_len: 4096 # Context window
+  max_model_len: 32768 # Context window
