@@ -10,5 +10,10 @@ module:
   max_tokens: 4000
   convert_prompt_to_chat: True
   tensor_parallel_size: 1 # can fit on 1 gpu
-  max_model_len: 32768 # context window
+  max_model_len: 32768 # context window
   enforce_eager: True
+  
+  # CAA steering parameters
+  steering_vector_path: null  # path to .pt file with steering vector
+  steering_layer_idx: null    # layer index to apply steering
+  steering_coeff: 1.0         # steering coefficient

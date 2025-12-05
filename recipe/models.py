@@ -139,6 +139,11 @@ class VLLMChatModelBase(InferenceModel):
         enforce_eager=False,
         skip_special_tokens=True,
         use_system_prompt=False,
+        
+        # CAA args
+        steering_vector_path: str = None,
+        steering_layer_idx: int = None,
+        steering_coeff: float = 1.0,
     ):
         self.temperature = temperature
         self.top_p = top_p
@@ -151,6 +156,11 @@ class VLLMChatModelBase(InferenceModel):
             skip_special_tokens=skip_special_tokens,
         )
         self.use_system_prompt = use_system_prompt
+        
+        # CAA hooks only work in eager mode
+        if steering_vector_path is not None and not enforce_eager:
+            logger.warning("Steering vector provided but enforce_eager=False. Forcing enforce_eager=True.")
+            enforce_eager = True
 
         # empty any unused GPU memory
         torch.cuda.empty_cache()
@@ -182,7 +192,60 @@ class VLLMChatModelBase(InferenceModel):
             self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         else:
             self.tokenizer = None
+            
+        # apply CAA hook if vector is provided
+        if steering_vector_path:
+            self._apply_caa_steering(steering_vector_path, steering_layer_idx, steering_coeff)
 
+    def _apply_caa_steering(self, vector_path: str, layer_idx: int, coeff: float):
+        """
+        Loads a steering vector and registers a forward hook on the underlying PyTorch model.
+        Requires VLLM_USE_V1=0 environment variable.
+        """
+        if layer_idx is None:
+            raise ValueError("steering_layer_idx must be provided if steering_vector_path is set.")
+
+        logger.info(f"Loading steering vector from {vector_path} for layer {layer_idx} with coeff {coeff}")
+        
+        # load vector
+        # assuming vector is saved as a torch tensor of shape (hidden_dim,)
+        steering_vector = torch.load(vector_path, map_location="cpu")
+        
+        # access the raw torch model inside vllm worker
+        # this path is specific to the v0 engine architecture
+        # note: in multi-gpu/ray setups, this access pattern might differ
+        try:
+            model_executor = self.llm.llm_engine.model_executor
+            raw_model = model_executor.driver_worker.model_runner.model
+        except AttributeError as e:
+            logger.error(f"Failed to access raw vLLM model. Ensure VLLM_USE_V1=0 is set. Error: {e}")
+            raise e
+
+        # hook
+        def caa_hook(module, input, output):
+            # output shape is usually [num_tokens, hidden_dim] in vllm (flattened batch)
+            # or [batch, seq, hidden] depending on the internal implementation.
+            # torch broadcasting handles the addition if vector is [hidden_dim]
+            
+            vec = steering_vector.to(dtype=output.dtype, device=output.device)
+            
+            # steering: x' = x + coeff * v
+            if isinstance(output, tuple):
+                # some hf models return tuples (hidden_states, cache)
+                return (output[0] + (coeff * vec),) + output[1:]
+            else:
+                return output + (coeff * vec)
+
+        # register the hook
+        # most hf models (Llama, Qwen, Mistral) store layers in model.layers
+        try:
+            target_layer = raw_model.model.layers[layer_idx]
+            target_layer.register_forward_hook(caa_hook)
+            logger.info(f"Successfully registered CAA hook on layer {layer_idx}")
+        except AttributeError:
+            logger.error(f"Could not find layer {layer_idx} in raw_model.model.layers")
+            raise
+    
     def question_to_chat_format(self, question: str) -> str:
         # Tokenization and chat format inspired by the recipe
         # from https://huggingface.co/neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8
@@ -403,6 +466,11 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
         max_model_len=32768,
         gpu_memory_utilization=0.9,
         enforce_eager=True,
+        
+        # Add args here to pass through
+        steering_vector_path=None,
+        steering_layer_idx=None,
+        steering_coeff=1.0,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 
@@ -416,6 +484,11 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
             max_model_len=max_model_len,
             gpu_memory_utilization=gpu_memory_utilization,
             enforce_eager=enforce_eager,
+            
+            # Pass args to Base
+            steering_vector_path=steering_vector_path,
+            steering_layer_idx=steering_layer_idx,
+            steering_coeff=steering_coeff,
         )
 
 class Gemma_3_1B_Instruct(VLLMChatModelBase):
