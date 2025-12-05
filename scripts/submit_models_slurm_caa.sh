@@ -14,7 +14,8 @@ STEERING_VECTOR_IDX=14
 STEERING_VECTOR_COEFF=1.0
 
 # Set vars
-DATASETS='glob(*,exclude=dummy)'
+# DATASETS='glob(*,exclude=dummy)'
+DATASETS=alcuna
 JUDGE=contains_abstention_keyword
 SINGLE_JOB=True
 COMMON_DIR_NAME="Qwen2_5_1_5B_Instruct_Keywards_judge_CAA_idx_${STEERING_VECTOR_IDX}"
@@ -51,7 +52,7 @@ for model in "${MODELS[@]}"; do
       common_dir="${COMMON_DIR}" \
       module.steering_vector_path="${STEERING_VECTOR_PATH}" \
       module.steering_layer_idx="${STEERING_VECTOR_IDX}" \
-      module.steering_coeff="${STEERING_VECTOR_COEFF}"
+      module.steering_coeff="${STEERING_VECTOR_COEFF}" \
       $( [[ -n "$USER_EMAIL" ]] && echo +hydra.launcher.additional_parameters.mail-type=ALL ) \
       $( [[ -n "$USER_EMAIL" ]] && echo +hydra.launcher.additional_parameters.mail-user="${USER_EMAIL}" )
 done

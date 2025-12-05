@@ -24,3 +24,4 @@ hydra:
       - 'export SLURM_EXPORT_ENV=ALL'
       - 'module load GCC'
       - 'module load CUDA/12.4'
+      - 'export VLLM_USE_V1=0'
