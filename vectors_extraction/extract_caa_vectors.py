@@ -2,7 +2,6 @@ import argparse
 import os
 import torch
 import pandas as pd
-from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from recipe.system_prompt import SYSTEM_PROMPT
@@ -48,7 +47,7 @@ def extract_vectors(args):
     
     diff_vectors = []
 
-    for pair in tqdm(pairs, desc="Extracting vectors"):
+    for pair in pairs:
         question = pair["question"]
         
         responses = [pair["abstain_response"], pair["non_abstain_response"]]
@@ -87,9 +86,9 @@ def extract_vectors(args):
             slice_len = min(num_tokens, 10)
             
             # sanity check
-            if i == 0:
-                sliced_ids = inputs.input_ids[0, prompt_len : prompt_len+slice_len]
-                print(f"DEBUG - Actual tokens being averaged: {tokenizer.decode(sliced_ids)}")
+            # if i == 0:
+            #     sliced_ids = inputs.input_ids[0, prompt_len : prompt_len+slice_len]
+            #     print(f"DEBUG - Actual tokens being averaged: {tokenizer.decode(sliced_ids)}")
                 
             mean_act = response_acts[:, :slice_len, :].mean(dim=1).squeeze()
             
