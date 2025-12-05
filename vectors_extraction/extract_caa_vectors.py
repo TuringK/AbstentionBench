@@ -12,7 +12,7 @@ def extract_vectors(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name, 
-        dtype=torch.bfloat16,
+        dtype=torch.float16,
         device_map="auto"
     )
     model.eval()
@@ -20,15 +20,13 @@ def extract_vectors(args):
     print(f"Loading data from {args.data_path}")
     df = pd.read_csv(args.data_path)
     
-    # Filter out missing responses
     df = df.dropna(subset=["response"])
     
-    # Group by pair_id to get (Abstain, Non-Abstain) pairs
-    # Assuming 'did_abstain' is the boolean label for successful abstention
+    # group by pair_id to get (abstain, non-abstain) pairs
     pairs = []
     grouped = df.groupby("pair_id")
     
-    for pair_id, group in grouped:
+    for _, group in grouped:
         if len(group) != 2:
             continue
             
@@ -44,39 +42,29 @@ def extract_vectors(args):
 
     print(f"Found {len(pairs)} valid pairs.")
     
-    # Storage for difference vectors
     diff_vectors = []
 
     for pair in tqdm(pairs, desc="Extracting vectors"):
         question = pair["question"]
         
-        # We process both responses
         responses = [pair["abstain_response"], pair["non_abstain_response"]]
         
-        # 1. Format inputs
+        # format inputs
         prompt_str = question_to_chat_format(
             use_system_prompt=args.use_system_prompt,
             question=question,
             tokenizer=tokenizer
         )
         
-        # Tokenize prompt separately to know where response starts
+        # tokenize prompt separately to know where response starts
         prompt_ids = tokenizer(prompt_str, return_tensors="pt").input_ids.to(model.device)
         prompt_len = prompt_ids.shape[1]
-
-        current_pair_diffs = []
         
-        # 2. Run forward pass for both responses
-        # We calculate: Mean(Act_Abstain) - Mean(Act_NonAbstain)
+        # run forward pass for both responses
+        # calculate: mean(act_abstain) - mean(act_non_abstain)
         activations = {}
         
-        for i, response in enumerate(responses):
-            # Sanity check
-            if i == 0:
-                # Decode the tokens you are actually averaging
-                sliced_ids = inputs.input_ids[0, prompt_len : prompt_len+slice_len]
-                print(f"DEBUG - Actual tokens being averaged: {tokenizer.decode(sliced_ids)}")
-    
+        for i, response in enumerate(responses):    
             label = "abstain" if i == 0 else "non_abstain"
             full_text = prompt_str + response
             inputs = tokenizer(full_text, return_tensors="pt").to(model.device)
@@ -84,29 +72,30 @@ def extract_vectors(args):
             with torch.no_grad():
                 outputs = model(inputs.input_ids, output_hidden_states=True)
             
-            # Get hidden states for the specified layer
-            # outputs.hidden_states is a tuple of (layer_0, layer_1, ... layer_N)
-            # Index 0 is embeddings, so layer_idx + 1 usually corresponds to the output of the Nth layer block
-            # However, HF usually maps hidden_states[i] to the output of layer i-1 (where 0 is embeddings).
-            # To match vLLM's model.layers[i], we typically want hidden_states[i+1].
             hidden_state = outputs.hidden_states[args.layer_idx + 1]
             
-            # Extract only the response tokens (exclude prompt)
-            # Shape: [1, seq_len, hidden_dim]
+            # extract only the response tokens (exclude prompt)
+            # shape: [1, seq_len, hidden_dim]
             response_acts = hidden_state[:, prompt_len:, :]
             
-            # Use only the first 10 tokens, or the length of the response, whichever is shorter
+            # use only the first 10 tokens, or the length of the response, whichever is shorter
             num_tokens = response_acts.shape[1]
-            slice_len = min(num_tokens, 10) 
+            slice_len = min(num_tokens, 10)
+            
+            # sanity check
+            if i == 0:
+                sliced_ids = inputs.input_ids[0, prompt_len : prompt_len+slice_len]
+                print(f"DEBUG - Actual tokens being averaged: {tokenizer.decode(sliced_ids)}")
+                
             mean_act = response_acts[:, :slice_len, :].mean(dim=1).squeeze()
             
             activations[label] = mean_act
 
-        # 3. Compute difference
+        # compute difference
         diff = activations["abstain"] - activations["non_abstain"]
         diff_vectors.append(diff)
 
-    # 4. Average over dataset
+    # average over dataset
     if not diff_vectors:
         print("No vectors extracted.")
         return
@@ -114,7 +103,7 @@ def extract_vectors(args):
     stacked_diffs = torch.stack(diff_vectors)
     mean_steering_vector = stacked_diffs.mean(dim=0)
     
-    # 5. Save
+    # save
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     torch.save(mean_steering_vector, args.output_path)
     print(f"Saved steering vector for layer {args.layer_idx} to {args.output_path}")
