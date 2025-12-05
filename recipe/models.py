@@ -223,17 +223,13 @@ class VLLMChatModelBase(InferenceModel):
 
         # hook
         def caa_hook(module, input, output):
-            # output shape is usually [num_tokens, hidden_dim] in vllm (flattened batch)
-            # or [batch, seq, hidden] depending on the internal implementation.
-            # torch broadcasting handles the addition if vector is [hidden_dim]
-            
-            vec = steering_vector.to(dtype=output.dtype, device=output.device)
-            
-            # steering: x' = x + coeff * v
             if isinstance(output, tuple):
-                # some hf models return tuples (hidden_states, cache)
-                return (output[0] + (coeff * vec),) + output[1:]
+                hidden_states = output[0]
+                vec = steering_vector.to(dtype=hidden_states.dtype, device=hidden_states.device)
+                modified_hidden_states = hidden_states + (coeff * vec)
+                return (modified_hidden_states,) + output[1:]
             else:
+                vec = steering_vector.to(dtype=output.dtype, device=output.device)
                 return output + (coeff * vec)
 
         # register the hook
