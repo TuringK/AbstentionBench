@@ -42,6 +42,10 @@ def extract_vectors(args):
 
     print(f"Found {len(pairs)} valid pairs.")
     
+    if args.max_pairs is not None and len(pairs) > args.max_pairs:
+        print(f"Limiting to {args.max_pairs} pairs.")
+        pairs = pairs[:args.max_pairs]
+    
     diff_vectors = []
 
     for pair in tqdm(pairs, desc="Extracting vectors"):
@@ -130,7 +134,8 @@ if __name__ == "__main__":
     parser.add_argument("--data_path", type=str, required=True, help="Path to pairs CSV")
     parser.add_argument("--output_path", type=str, required=True, help="Path to save .pt vector")
     parser.add_argument("--layer_idx", type=int, required=True, help="Layer index to extract from")
-    parser.add_argument("--use_system_prompt", action="store_true") 
+    parser.add_argument("--use_system_prompt", action="store_true")
+    parser.add_argument("--max_pairs", type=int, default=None, help="Max pairs to process")
        
     args = parser.parse_args()
     extract_vectors(args)
