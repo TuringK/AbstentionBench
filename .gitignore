@@ -205,3 +205,5 @@ __marimo__/
 
 playground*.ipynb
 data/*
+
+logs
