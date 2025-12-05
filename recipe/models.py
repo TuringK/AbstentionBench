@@ -223,6 +223,13 @@ class VLLMChatModelBase(InferenceModel):
 
         # hook
         def caa_hook(module, input, output):
+            # log output type on first call
+            if not hasattr(caa_hook, '_logged'):
+                logger.info(f"CAA hook output type: {type(output)}, is_tuple: {isinstance(output, tuple)}")
+                if isinstance(output, tuple):
+                    logger.info(f"Tuple length: {len(output)}, first element type: {type(output[0])}")
+                caa_hook._logged = True
+                
             if isinstance(output, tuple):
                 hidden_states = output[0]
                 vec = steering_vector.to(dtype=hidden_states.dtype, device=hidden_states.device)
