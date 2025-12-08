@@ -76,6 +76,11 @@ Examples:
         action="store_true",
         help="Save results for each vector index in a separate file (steering mode only)."
     )
+    parser.add_argument(
+        "--find-best",
+        action="store_true",
+        help="Find and print the best performing vector across all metrics (steering mode only)."
+    )
     
     args = parser.parse_args()
     
@@ -251,7 +256,7 @@ def process_steering_results(
             table_df['vector_index'] = idx
             all_results.append(table_df)
             
-            # save per-vector file if requested
+            # Save per-vector file if requested
             if save_per_vector and output_path:
                 vector_output_path = _add_suffix_to_path(output_path, f"_vector_{idx}")
                 save_results(table_df, vector_output_path)
@@ -272,6 +277,57 @@ def _add_suffix_to_path(path: str, suffix: str) -> str:
     """
     base, ext = os.path.splitext(path)
     return f"{base}{suffix}{ext}"
+
+
+def find_best_vector_overall(
+    df: pd.DataFrame,
+    metrics: list[str] | None = None,
+    aggregation: str = "mean"
+) -> dict:
+    """
+    Finds the best vector across multiple metrics using average rank.
+    
+    Args:
+        df: DataFrame with 'vector_index' column.
+        metrics: List of metrics to consider (default: f1_score, precision, recall).
+        aggregation: How to aggregate across datasets per vector ('mean', 'median', 'min').
+        
+    Returns:
+        Dict with best vector and ranking details.
+    """
+    if df.empty or 'vector_index' not in df.columns:
+        return {"error": "No vector results found"}
+    
+    if metrics is None:
+        metrics = ["f1_score", "precision", "recall"]
+    
+    # filter to available metrics
+    metrics = [m for m in metrics if m in df.columns]
+    if not metrics:
+        available = [c for c in df.columns if c not in ['vector_index', 'model_name_formatted', 'dataset_name_formatted']]
+        return {"error": f"No valid metrics found. Available columns: {available}"}
+    
+    # aggregate each metric per vector
+    agg_func = {'mean': 'mean', 'median': 'median', 'min': 'min'}[aggregation]
+    vector_scores = df.groupby('vector_index')[metrics].agg(agg_func)
+    
+    # rank each metric (higher is better)
+    ranks = vector_scores.rank(ascending=False)
+    
+    # average rank across metrics
+    avg_rank = ranks.mean(axis=1).sort_values()
+    
+    best_idx = avg_rank.index[0]
+    
+    return {
+        "best_vector_index": int(best_idx),
+        "average_rank": float(avg_rank[best_idx]),
+        "metrics_used": metrics,
+        "aggregation": aggregation,
+        "scores": vector_scores.loc[best_idx].to_dict(),
+        "all_rankings": {int(k): float(v) for k, v in avg_rank.to_dict().items()},
+        "all_scores": vector_scores.to_dict()
+    }
 
 
 def save_results(df: pd.DataFrame, output_path: str) -> None:
@@ -295,6 +351,7 @@ def save_results(df: pd.DataFrame, output_path: str) -> None:
     else:
         if not output_path.endswith(".csv"):
             output_path = output_path + ".csv"
+            
         df.to_csv(output_path, index=False)
         print(f"Results saved to {output_path}")
 
@@ -325,5 +382,28 @@ if __name__ == "__main__":
     if args.output:
         save_results(results_df, args.output)
     
-    
-    
+    # find and print best vector if requested (steering mode only)
+    if args.steering_dir and args.find_best:
+        best = find_best_vector_overall(results_df)
+        if "error" in best:
+            print(f"\nError finding best vector: {best['error']}")
+        else:
+            print("\n\n" + "=" * 50)
+            print("BEST VECTOR ANALYSIS")
+            print("=" * 50)
+            print(f"Best vector index: {best['best_vector_index']}")
+            print(f"Average rank: {best['average_rank']:.2f}")
+            print(f"Metrics used: {', '.join(best['metrics_used'])}")
+            print(f"Aggregation: {best['aggregation']}")
+            print(f"\nScores for best vector ({best['best_vector_index']}):")
+            
+            for metric, score in best['scores'].items():
+                print(f"  {metric}: {score:.4f}")
+                
+            print(f"\nAll vector rankings (lower is better):")
+            
+            for vec_idx, rank in sorted(best['all_rankings'].items(), key=lambda x: x[1]):
+                marker = " <-- BEST" if vec_idx == best['best_vector_index'] else ""
+                print(f"  Vector {vec_idx}: rank {rank:.2f}{marker}")
+                
+            print("=" * 50)
