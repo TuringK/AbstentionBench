@@ -1,7 +1,85 @@
 import os
+import argparse
 import pandas as pd
 from analysis.load_results import Results
 from analysis.tables import AbstentionF1ScoreTable
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Process abstention benchmark results.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Single results directory
+  python results_analysis.py --results-dir data/results --output results.csv
+
+  # Steering sweep mode
+  python results_analysis.py --steering-dir data/vectors --vector-indices 10 11 12 --output sweep.xlsx
+
+  # Filter training data
+  python results_analysis.py --results-dir data/results --filter-training --training-data data/sample_pairs.csv
+
+  # Exclude specific datasets
+  python results_analysis.py --results-dir data/results --exclude-datasets WorldSense MoralChoice
+        """
+    )
+    
+    # mode selection
+    mode_group = parser.add_mutually_exclusive_group(required=True)
+    mode_group.add_argument(
+        "--results-dir",
+        type=str,
+        help="Path to a single results directory."
+    )
+    mode_group.add_argument(
+        "--steering-dir",
+        type=str,
+        help="Base directory for steering sweep (contains subdirectories for each vector index)."
+    )
+    
+    # steering-specific args
+    parser.add_argument(
+        "--vector-indices",
+        type=int,
+        nargs="+",
+        help="List of vector indices to process (required for steering mode)."
+    )
+    
+    # filtering options
+    parser.add_argument(
+        "--filter-training",
+        action="store_true",
+        help="Filter out questions present in training data."
+    )
+    parser.add_argument(
+        "--training-data",
+        type=str,
+        default="data/sample_pairs.csv",
+        help="Path to training data CSV file (default: data/sample_pairs.csv)."
+    )
+    parser.add_argument(
+        "--exclude-datasets",
+        type=str,
+        nargs="+",
+        help="List of dataset names to exclude from results."
+    )
+    
+    # output options
+    parser.add_argument(
+        "--output", "-o",
+        type=str,
+        help="Output file path. Use .csv or .xlsx extension to specify format."
+    )
+    
+    args = parser.parse_args()
+    
+    # validate steering mode requires vector indices
+    if args.steering_dir and not args.vector_indices:
+        parser.error("--vector-indices is required when using --steering-dir")
+    
+    return args
+
 
 def normalise_text(text):
     """
@@ -11,7 +89,7 @@ def normalise_text(text):
         return str(text)
     return "".join(text.split())
 
-def filter_training_data(df: pd.DataFrame, training_data_path: str = "data/sample_pairs.csv") -> pd.DataFrame:
+def filter_training_data(df: pd.DataFrame, training_data_path: str) -> pd.DataFrame:
     """
     Filters out questions from the dataframe that are present in the training data.
     
@@ -22,7 +100,6 @@ def filter_training_data(df: pd.DataFrame, training_data_path: str = "data/sampl
     Returns:
         DataFrame with training data removed.
     """
-
     training_df = pd.read_csv(training_data_path)
     
     # normalise
@@ -54,13 +131,19 @@ def print_abstention_stats(df: pd.DataFrame):
     print(f"Total Positive Examples (Correctly Abstained): {correctly_abstained} / {total_should_abstain} ({percentage:.1f}%)")
     print(f"Total Negative Examples (Failed to Abstain):   {failed_to_abstain} / {total_should_abstain}")
 
-def process_results_dir(results_dir: str, filter_training: bool = False, excluded_datasets: list[str] | None = None) -> pd.DataFrame:
+def process_results_dir(
+    results_dir: str,
+    filter_training: bool = False,
+    training_data_path: str = "data/sample_pairs.csv",
+    excluded_datasets: list[str] | None = None
+) -> pd.DataFrame:
     """
     Processes results for a single results directory.
     
     Args:
         results_dir: Directory containing the results.
         filter_training: Whether to filter out training data.
+        training_data_path: Path to the training data CSV file.
         excluded_datasets: List of datasets to exclude.
         
     Returns:
@@ -95,7 +178,7 @@ def process_results_dir(results_dir: str, filter_training: bool = False, exclude
         return pd.DataFrame()
 
     if filter_training:
-        r.df = filter_training_data(r.df)
+        r.df = filter_training_data(r.df, training_data_path)
     
     if excluded_datasets:
         mask = pd.Series(False, index=r.df.index)
@@ -121,13 +204,22 @@ def process_results_dir(results_dir: str, filter_training: bool = False, exclude
     
     return table_df
 
-def process_steering_results(base_dir: str, vector_indices: list[int], filter_training: bool, excluded_datasets: list[str] | None = None) -> pd.DataFrame:
+def process_steering_results(
+    base_dir: str,
+    vector_indices: list[int],
+    filter_training: bool,
+    training_data_path: str = "data/sample_pairs.csv",
+    excluded_datasets: list[str] | None = None
+) -> pd.DataFrame:
     """
     Processes results for each steering vector index.
     
     Args:
         base_dir: Base directory containing subdirectories for each vector index.
         vector_indices: List of vector indices to process.
+        filter_training: Whether to filter out training data.
+        training_data_path: Path to the training data CSV file.
+        excluded_datasets: List of datasets to exclude.
         
     Returns:
         DataFrame containing aggregated results for all vectors.
@@ -138,7 +230,7 @@ def process_steering_results(base_dir: str, vector_indices: list[int], filter_tr
         results_dir = os.path.join(base_dir, str(idx), "results")
         
         print(f"\nProcessing vector index {idx}...")
-        table_df = process_results_dir(results_dir, filter_training, excluded_datasets)
+        table_df = process_results_dir(results_dir, filter_training, training_data_path, excluded_datasets)
         
         if not table_df.empty:
             table_df['vector_index'] = idx
@@ -147,24 +239,54 @@ def process_steering_results(base_dir: str, vector_indices: list[int], filter_tr
     return pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
 
 
-if __name__ == "__main__":
-    # base_dir = "data/Qwen2_5_1_5B_Instruct_Keywords_judge_CAA_idx_10-27_coeff_1_0"
-    # # vector_idx = range(10, 28) # 10 to 27 inclusive
-    # vector_idx = [14]
-    # # exclude_datasets = ["WorldSense", "MoralChoice"]
+def save_results(df: pd.DataFrame, output_path: str) -> None:
+    """
+    Saves the results DataFrame to a file (CSV or Excel).
+    
+    Args:
+        df: DataFrame to save.
+        output_path: Output file path. Extension determines format (.csv or .xlsx).
+    """
+    if df.empty:
+        print("No results to save.")
+        return
+    
+    if output_path.endswith(".xlsx"):
+        try:
+            df.to_excel(output_path, index=False)
+            print(f"Results saved to {output_path}")
+        except ImportError:
+            print("Error: Excel export requires 'openpyxl' package. Install with: pip install openpyxl")
+    else:
+        if not output_path.endswith(".csv"):
+            output_path = output_path + ".csv"
+        df.to_csv(output_path, index=False)
+        print(f"Results saved to {output_path}")
 
-    # results_df = process_steering_results(
-    #     base_dir=BASE_DIR, 
-    #     vector_indices=vector_idx, 
-    #     filter_training=False,
-    #     # excluded_datasets=exclude_datasets,
-    # )
+
+if __name__ == "__main__":
+    args = parse_args()
     
-    results_dir = "data/original_abstention/Qwen2_5_1_5B_Instruct_Benchmark/results"
-    filter_training = True
+    if args.steering_dir:
+        # steering sweep mode
+        results_df = process_steering_results(
+            base_dir=args.steering_dir,
+            vector_indices=args.vector_indices,
+            filter_training=args.filter_training,
+            training_data_path=args.training_data,
+            excluded_datasets=args.exclude_datasets,
+        )
+    else:
+        # single results directory mode
+        results_df = process_results_dir(
+            results_dir=args.results_dir,
+            filter_training=args.filter_training,
+            training_data_path=args.training_data,
+            excluded_datasets=args.exclude_datasets,
+        )
     
-    results_df = process_results_dir(results_dir=results_dir, filter_training=filter_training)
-    results_df.to_excel("data/vanila_qwen2_5_1_5B_instruct_keywords_judge_filtered.xlsx")
+    if args.output:
+        save_results(results_df, args.output)
     
     
     
