@@ -71,6 +71,11 @@ Examples:
         type=str,
         help="Output file path. Use .csv or .xlsx extension to specify format."
     )
+    parser.add_argument(
+        "--save-per-vector",
+        action="store_true",
+        help="Save results for each vector index in a separate file (steering mode only)."
+    )
     
     args = parser.parse_args()
     
@@ -209,7 +214,9 @@ def process_steering_results(
     vector_indices: list[int],
     filter_training: bool,
     training_data_path: str = "data/sample_pairs.csv",
-    excluded_datasets: list[str] | None = None
+    excluded_datasets: list[str] | None = None,
+    output_path: str | None = None,
+    save_per_vector: bool = False
 ) -> pd.DataFrame:
     """
     Processes results for each steering vector index.
@@ -220,6 +227,8 @@ def process_steering_results(
         filter_training: Whether to filter out training data.
         training_data_path: Path to the training data CSV file.
         excluded_datasets: List of datasets to exclude.
+        output_path: Output file path for saving results.
+        save_per_vector: Whether to save each vector's results in a separate file.
         
     Returns:
         DataFrame containing aggregated results for all vectors.
@@ -233,10 +242,36 @@ def process_steering_results(
         table_df = process_results_dir(results_dir, filter_training, training_data_path, excluded_datasets)
         
         if not table_df.empty:
+            # update model_name_formatted to include steered suffix
+            if 'model_name_formatted' in table_df.columns:
+                table_df['model_name_formatted'] = table_df['model_name_formatted'].apply(
+                    lambda x: f"{x}_steered_{idx}"
+                )
+            
             table_df['vector_index'] = idx
             all_results.append(table_df)
             
+            # save per-vector file if requested
+            if save_per_vector and output_path:
+                vector_output_path = _add_suffix_to_path(output_path, f"_vector_{idx}")
+                save_results(table_df, vector_output_path)
+            
     return pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
+
+
+def _add_suffix_to_path(path: str, suffix: str) -> str:
+    """
+    Adds a suffix to a file path before the extension.
+    
+    Args:
+        path: Original file path.
+        suffix: Suffix to add.
+        
+    Returns:
+        Modified file path with suffix.
+    """
+    base, ext = os.path.splitext(path)
+    return f"{base}{suffix}{ext}"
 
 
 def save_results(df: pd.DataFrame, output_path: str) -> None:
@@ -275,6 +310,8 @@ if __name__ == "__main__":
             filter_training=args.filter_training,
             training_data_path=args.training_data,
             excluded_datasets=args.exclude_datasets,
+            output_path=args.output,
+            save_per_vector=args.save_per_vector,
         )
     else:
         # single results directory mode
