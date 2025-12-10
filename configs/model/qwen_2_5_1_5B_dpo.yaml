@@ -1,0 +1,13 @@
+model_name: Qwen2_5_1_5B_Instruct_DPO
+
+module:
+  _target_: recipe.models.${model_name}
+  temperature: 0.8
+  top_p: 0.95
+  local_model_path: ""
+
+  max_tokens: 4000
+  convert_prompt_to_chat: True
+  tensor_parallel_size: 1 # can fit on 1 gpu
+  max_model_len: 32768 # context window
+  enforce_eager: True

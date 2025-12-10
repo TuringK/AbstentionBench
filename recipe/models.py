@@ -438,6 +438,32 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
             gpu_memory_utilization=gpu_memory_utilization,
             enforce_eager=enforce_eager,
         )
+        
+class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
+    def __init__(
+        self,
+        temperature=0.8,
+        top_p=0.95,
+        max_tokens=None,
+        local_model_path=None,
+        convert_prompt_to_chat=True,
+        tensor_parallel_size=1,
+        max_model_len=32768,
+        gpu_memory_utilization=0.9,
+        enforce_eager=True,
+    ):
+
+        super().__init__(
+            model_path=local_model_path,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            convert_prompt_to_chat=convert_prompt_to_chat,
+            tensor_parallel_size=tensor_parallel_size,
+            max_model_len=max_model_len,
+            gpu_memory_utilization=gpu_memory_utilization,
+            enforce_eager=enforce_eager,
+        )        
 
 class Gemma_3_1B_Instruct(VLLMChatModelBase):
     def __init__(
@@ -465,6 +491,33 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
             enforce_eager=enforce_eager,
         )
         
+
+class Gemma_3_1B_Instruct_DPO(VLLMChatModelBase):
+    def __init__(
+        self,
+        temperature=0.8,
+        top_p=0.95,
+        max_tokens=None,
+        local_model_path=None,
+        convert_prompt_to_chat=True,
+        tensor_parallel_size=1,
+        max_model_len=32768,
+        gpu_memory_utilization=0.9,
+        enforce_eager=True,
+    ):
+
+        super().__init__(
+            model_path=local_model_path,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            convert_prompt_to_chat=convert_prompt_to_chat,
+            tensor_parallel_size=tensor_parallel_size,
+            max_model_len=max_model_len,
+            gpu_memory_utilization=gpu_memory_utilization,
+            enforce_eager=enforce_eager,
+        )    
+    
 class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
       def __init__(
         self,

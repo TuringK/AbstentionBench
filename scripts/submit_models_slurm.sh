@@ -9,20 +9,19 @@
 source ./activate.sh
 
 # Set vars
-DATASETS='glob(*,exclude=dummy)'
-JUDGE=llm_judge_llama_3_1_8B_instruct
+DATASETS=alcuna,bbq,big_bench_disambiguate,big_bench_known_unknowns,coconot,falseqa,freshqa,gpqa,gsm8k,kuq,mediq,mmlu_history,mmlu_math,moralchoice,musique,qaqa,qasper,self_aware,situated_qa,squad2,umwp,worldsense
+JUDGE=contains_abstention_keyword
 SINGLE_JOB=False
-COMMON_DIR_NAME=All_models_Llama8B_judge
+COMMON_DIR_NAME=DPO_1B_KEYWORD
 
 # Change to match your path
 PYTHON_BIN=/mnt/parscratch/users/${USER_NAME}/private/mamba/envs/abstention-bench/bin/python
-COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/${COMMON_DIR_NAME}
+COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/turing/AbstentionBench/${COMMON_DIR_NAME}
 
 # Models to iterate
 MODELS=(
-  "gemma_3_1B"
-  "qwen2_5_1_5B_instruct"
-  "allenai_llama_3_1_tulu_3_1_8B"
+  "gemma_3_1B_dpo"
+  "qwen_2_5_1_5B_dpo"
 )
 
 # Check if email was set in activate.sh

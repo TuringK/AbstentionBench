@@ -19,7 +19,7 @@ hydra:
     comment: ${project}
 
     additional_parameters:
-      mem: 8G  # Use raw SLURM parameter instead
+      mem: 64G  # Use raw SLURM parameter instead
     setup:
       - 'export SLURM_EXPORT_ENV=ALL'
       - 'module load GCC'
