@@ -81,6 +81,11 @@ Examples:
         action="store_true",
         help="Find and print the best performing vector across all metrics (steering mode only)."
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Print detailed debug information during filtering."
+    )
     
     args = parser.parse_args()
     
@@ -99,29 +104,69 @@ def normalise_text(text):
         return str(text)
     return "".join(text.split())
 
-def filter_training_data(df: pd.DataFrame, training_data_path: str) -> pd.DataFrame:
+def filter_training_data(df: pd.DataFrame, training_data_path: str, debug: bool = False) -> pd.DataFrame:
     """
     Filters out questions from the dataframe that are present in the training data.
     
     Args:
         df: DataFrame containing the results.
         training_data_path: Path to the CSV file containing training data.
+        debug: If True, print detailed debug information.
         
     Returns:
         DataFrame with training data removed.
     """
     training_df = pd.read_csv(training_data_path)
     
+    training_questions_raw = training_df['question'].unique()
+    print(f"Training data: {len(training_df)} rows, {len(training_questions_raw)} unique questions")
+    
     # normalise
     training_data_normalised = set(training_df['question'].apply(normalise_text))
+    print(f"Training data after normalisation: {len(training_data_normalised)} unique normalised questions")
+    
+    # check if normalisation reduced unique count (indicates collisions)
+    if len(training_data_normalised) < len(training_questions_raw):
+        print(f"WARNING: Normalisation reduced unique questions by {len(training_questions_raw) - len(training_data_normalised)}")
     
     # filter
     df['prompt_question_normalised'] = df['prompt_question'].apply(normalise_text)
+    
+    # debug: check for duplicates in benchmark data
+    if debug:
+        benchmark_questions = df['prompt_question_normalised'].value_counts()
+        duplicates = benchmark_questions[benchmark_questions > 1]
+        if not duplicates.empty:
+            print(f"\nDuplicate questions in benchmark data:")
+            print(f"  Total unique questions: {len(benchmark_questions)}")
+            print(f"  Questions appearing >1 time: {len(duplicates)}")
+            print(f"  Total duplicate rows: {duplicates.sum() - len(duplicates)}")
+    
+    # which questions will be filtered
+    matches_mask = df['prompt_question_normalised'].isin(training_data_normalised)
+    matched_rows = df[matches_mask]
+    
+    if debug:
+        # check if matched questions appear multiple times
+        matched_question_counts = matched_rows['prompt_question_normalised'].value_counts()
+        multi_match = matched_question_counts[matched_question_counts > 1]
+        if not multi_match.empty:
+            print(f"\nTraining questions matching multiple benchmark rows:")
+            print(f"  Unique training questions matched: {len(matched_question_counts)}")
+            print(f"  Training questions matching >1 row: {len(multi_match)}")
+            print(f"  Extra rows from duplicates: {multi_match.sum() - len(multi_match)}")
+        
+        # breakdown by dataset
+        print(f"\nFiltered rows by dataset:")
+        print(matched_rows.groupby('dataset_name')['prompt_question'].count().to_string())
+    
     initial_len = len(df)
-    filtered_df = df[~df['prompt_question_normalised'].isin(training_data_normalised)].copy()
+    filtered_df = df[~matches_mask].copy()
     filtered_df = filtered_df.drop(columns=['prompt_question_normalised'])
     
-    print(f"Filtered out {initial_len - len(filtered_df)} rows. Remaining rows: {len(filtered_df)}")
+    unique_questions_filtered = matched_rows['prompt_question_normalised'].nunique()
+    print(f"\nFiltered out {initial_len - len(filtered_df)} rows ({unique_questions_filtered} unique questions). Remaining rows: {len(filtered_df)}")
+    
     return filtered_df
 
 def print_abstention_stats(df: pd.DataFrame):
@@ -145,7 +190,8 @@ def process_results_dir(
     results_dir: str,
     filter_training: bool = False,
     training_data_path: str = "data/sample_pairs.csv",
-    excluded_datasets: list[str] | None = None
+    excluded_datasets: list[str] | None = None,
+    debug: bool = False
 ) -> pd.DataFrame:
     """
     Processes results for a single results directory.
@@ -188,7 +234,7 @@ def process_results_dir(
         return pd.DataFrame()
 
     if filter_training:
-        r.df = filter_training_data(r.df, training_data_path)
+        r.df = filter_training_data(r.df, training_data_path, debug=debug)
     
     if excluded_datasets:
         mask = pd.Series(False, index=r.df.index)
@@ -221,7 +267,8 @@ def process_steering_results(
     training_data_path: str = "data/sample_pairs.csv",
     excluded_datasets: list[str] | None = None,
     output_path: str | None = None,
-    save_per_vector: bool = False
+    save_per_vector: bool = False,
+    debug: bool = False
 ) -> pd.DataFrame:
     """
     Processes results for each steering vector index.
@@ -244,7 +291,7 @@ def process_steering_results(
         results_dir = os.path.join(base_dir, str(idx), "results")
         
         print(f"\nProcessing vector index {idx}...")
-        table_df = process_results_dir(results_dir, filter_training, training_data_path, excluded_datasets)
+        table_df = process_results_dir(results_dir, filter_training, training_data_path, excluded_datasets, debug=debug)
         
         if not table_df.empty:
             # update model_name_formatted to include steered suffix
@@ -256,9 +303,9 @@ def process_steering_results(
             table_df['vector_index'] = idx
             all_results.append(table_df)
             
-            # Save per-vector file if requested
+            # save per-vector file if requested
             if save_per_vector and output_path:
-                vector_output_path = _add_suffix_to_path(output_path, f"_vector_{idx}")
+                vector_output_path = _add_suffix_to_path(output_path, f"_{idx}")
                 save_results(table_df, vector_output_path)
             
     return pd.concat(all_results, ignore_index=True) if all_results else pd.DataFrame()
@@ -369,6 +416,7 @@ if __name__ == "__main__":
             excluded_datasets=args.exclude_datasets,
             output_path=args.output,
             save_per_vector=args.save_per_vector,
+            debug=args.debug,
         )
     else:
         # single results directory mode
@@ -377,6 +425,7 @@ if __name__ == "__main__":
             filter_training=args.filter_training,
             training_data_path=args.training_data,
             excluded_datasets=args.exclude_datasets,
+            debug=args.debug,
         )
     
     if args.output:
