@@ -9,3 +9,7 @@ module load CUDA/12.4
 
 export USER_EMAIL="your.email@sheffield.ac.uk"
 export USER_NAME="your_username"
+
+# ALSO EXPORT HF CACHE IF YOU ARE USING GATED MODELS SUCH AS GEMMA
+export HF_HOME="/mnt/parscratch/users/${USER}/private/.tmp/huggingface_cache"
+export HF_DATASETS_CACHE="/mnt/parscratch/users/${USER}/private/.tmp/huggingface_cache/datasets"
