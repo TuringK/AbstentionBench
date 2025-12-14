@@ -16,7 +16,7 @@ COMMON_DIR_NAME=All_models_Llama8B_judge
 
 # Change to match your path
 PYTHON_BIN=/mnt/parscratch/users/${USER_NAME}/private/mamba/envs/abstention-bench/bin/python
-COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/${COMMON_DIR_NAME}
+COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/data/${COMMON_DIR_NAME}
 
 # Models to iterate
 MODELS=(
