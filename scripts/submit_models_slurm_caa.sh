@@ -26,9 +26,9 @@ COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/d
 
 # Models to iterate
 MODELS=(
-#   "gemma_3_1B"
-  "qwen2_5_1_5B_instruct"
-#   "allenai_llama_3_1_tulu_3_1_8B"
+  "gemma_3_1B_instruct"
+  "qwen2_5_0_5B_instruct"
+  "olmo3_7B_instruct"
 )
 
 # Check if email was set in activate.sh

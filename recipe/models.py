@@ -493,6 +493,42 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
         )
+        
+class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
+    def __init__(
+        self,
+        temperature=0.8,
+        top_p=0.95,
+        max_tokens=None,
+        convert_prompt_to_chat=True,
+        tensor_parallel_size=1,
+        max_model_len=32768,
+        gpu_memory_utilization=0.9,
+        enforce_eager=True,
+        
+        # Add args here to pass through
+        steering_vector_path=None,
+        steering_layer_idx=None,
+        steering_coeff=1.0,
+    ):
+        _VLLM_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
+
+        super().__init__(
+            model_path=_VLLM_MODEL_NAME,
+            temperature=temperature,
+            top_p=top_p,
+            max_tokens=max_tokens,
+            convert_prompt_to_chat=convert_prompt_to_chat,
+            tensor_parallel_size=tensor_parallel_size,
+            max_model_len=max_model_len,
+            gpu_memory_utilization=gpu_memory_utilization,
+            enforce_eager=enforce_eager,
+            
+            # Pass args to Base
+            steering_vector_path=steering_vector_path,
+            steering_layer_idx=steering_layer_idx,
+            steering_coeff=steering_coeff,
+        )
 
 class Gemma_3_1B_Instruct(VLLMChatModelBase):
     def __init__(
@@ -505,6 +541,11 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
         max_model_len=32768,
         gpu_memory_utilization=0.9,
         enforce_eager=True,
+        
+        # Add args here to pass through
+        steering_vector_path=None,
+        steering_layer_idx=None,
+        steering_coeff=1.0,
     ):
         _VLLM_MODEL_NAME = "google/gemma-3-1b-it"
 
@@ -518,6 +559,11 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
             max_model_len=max_model_len,
             gpu_memory_utilization=gpu_memory_utilization,
             enforce_eager=enforce_eager,
+            
+            # Pass args to Base
+            steering_vector_path=steering_vector_path,
+            steering_layer_idx=steering_layer_idx,
+            steering_coeff=steering_coeff,
         )
         
 class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):

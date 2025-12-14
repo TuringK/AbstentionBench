@@ -7,17 +7,17 @@
 #SBATCH --mem=82G
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
-#SBATCH --array=10-28 # layers to extract
+#SBATCH --array=15-31 # layers to extract
 
 source ./activate.sh
 
 PYTHON_BIN="/mnt/parscratch/users/${USER_NAME}/private/mamba/envs/abstention-bench/bin/python"
 DATA_PATH="/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/data/sample_pairs.csv"
 
-OUTPUT_DIR_NAME="Qwen/Qwen2_5_1_5B_Instruct/${SLURM_JOB_ID}"
+OUTPUT_DIR_NAME="vectors/Olmo3_7B_Instruct/"
 OUTPUT_PATH="/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/data/${OUTPUT_DIR_NAME}"
 
-MODEL_NAME="Qwen/Qwen2.5-1.5B-Instruct"
+MODEL_NAME="allenai/Olmo-3-7B-Instruct"
 
 # $SLURM_ARRAY_TASK_ID serves as the layer_idx
 export PYTHONPATH=$PYTHONPATH:$(pwd)
