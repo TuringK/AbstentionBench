@@ -245,9 +245,18 @@ class VLLMChatModelBase(InferenceModel):
             target_layer = raw_model.model.layers[layer_idx]
             target_layer.register_forward_hook(caa_hook)
             logger.info(f"Successfully registered CAA hook on layer {layer_idx}")
-        except AttributeError:
-            logger.error(f"Could not find layer {layer_idx} in raw_model.model.layers")
-            raise
+        except AttributeError as e:
+            logger.error(f"Could not find layer {layer_idx}. Structure path failed. Error: {e}")
+            logger.info("Attempting fallback: Trying HF Llama/Mistral/Olmo structure")
+            
+            try:
+                target_layer = raw_model.model.model.layers[layer_idx]
+                target_layer.register_forward_hook(caa_hook)
+                logger.info(f"Successfully registered CAA hook on layer {layer_idx} (Fallback Path)")
+                
+            except AttributeError as fallback_e:
+                logger.error(f"Fallback failed. Available attributes on model: {dir(raw_model.model)}")
+                raise fallback_e
     
     def question_to_chat_format(self, question: str) -> str:
         # Tokenization and chat format inspired by the recipe
@@ -416,6 +425,11 @@ class OLMo_3_7B_Instruct(VLLMChatModelBase):
         convert_prompt_to_chat=True,
         max_model_len=4096,
         tensor_parallel_size=1,
+        
+        # Add args here to pass through
+        steering_vector_path=None,
+        steering_layer_idx=None,
+        steering_coeff=1.0,
     ):
         _VLLM_MODEL_NAME = "allenai/Olmo-3-7B-Instruct"
         super().__init__(
@@ -426,6 +440,11 @@ class OLMo_3_7B_Instruct(VLLMChatModelBase):
             convert_prompt_to_chat=convert_prompt_to_chat,
             max_model_len=max_model_len,
             tensor_parallel_size=tensor_parallel_size,
+            
+            # Pass args to Base
+            steering_vector_path=steering_vector_path,
+            steering_layer_idx=steering_layer_idx,
+            steering_coeff=steering_coeff,
         )
 
 

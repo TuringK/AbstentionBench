@@ -12,3 +12,8 @@ module:
   convert_prompt_to_chat: True
   tensor_parallel_size: 1
   max_model_len: 32768 # Context window
+
+    # CAA steering parameters
+  steering_vector_path: null  # path to .pt file with steering vector
+  steering_layer_idx: null    # layer index to apply steering
+  steering_coeff: 1.0         # steering coefficient

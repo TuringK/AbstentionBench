@@ -3,22 +3,21 @@
 #SBATCH --job-name=abstention_master_caa
 #SBATCH --output=scripts/logs/%j/%j.out
 #SBATCH --error=scripts/logs/%j/%j.err
-#SBATCH --array=10-28 # layers to extract
 
 # Optional: if you want to set email and username in activate.sh
 # Warning: mamba env activation will fail, we use python bin directly for that
 source ./activate.sh
 
 # CAA vars
-STEERING_VECTOR_IDX="${SLURM_ARRAY_TASK_ID}"
+STEERING_VECTOR_IDX=15
 STEERING_VECTOR_COEFF=1.0
-STEERING_VECTOR_PATH=/mnt/parscratch/users/acb22av/private/projects/AbstentionBench/data/vectors/Qwen2_5_1_5B_Instruct/vec_layer_${STEERING_VECTOR_IDX}.pt
+STEERING_VECTOR_PATH=/mnt/parscratch/users/acb22av/private/projects/AbstentionBench/data/vectors/Olmo3_7B_Instruct/vec_layer_${STEERING_VECTOR_IDX}.pt
 
 # Set vars
 DATASETS='glob(*,exclude=dummy)'
 JUDGE=contains_abstention_keyword
 SINGLE_JOB=True
-COMMON_DIR_NAME="Qwen2_5_1_5B_Instruct_Keywords_judge_CAA_idx_10-27_coeff_1_0/${STEERING_VECTOR_IDX}"
+COMMON_DIR_NAME="Olmo3_7B_Instruct_Keywords_judge_CAA_idx_15_coeff_1_0/${STEERING_VECTOR_IDX}"
 
 # Change to match your path
 PYTHON_BIN=/mnt/parscratch/users/${USER_NAME}/private/mamba/envs/abstention-bench/bin/python
@@ -26,9 +25,10 @@ COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/d
 
 # Models to iterate
 MODELS=(
-  "gemma_3_1B_instruct"
-  "qwen2_5_0_5B_instruct"
-  "olmo3_7B_instruct"
+  # "gemma_3_1B_instruct"
+  # "qwen2_5_0_5B_instruct"
+  # "qwen2_5_1_5B_instruct"
+  "olmo_3_7B_instruct"
 )
 
 # Check if email was set in activate.sh
