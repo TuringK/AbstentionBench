@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.metrics import f1_score, precision_score, recall_score
 from tabulate import tabulate
 
-from analysis.load_results import Results
+from load_results import Results
 
 
 class AbstentionF1ScoreTable:

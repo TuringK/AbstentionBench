@@ -1,0 +1,31 @@
+model_name_formatted,scenario_label,dataset_name_formatted,post_training_stage,precision,recall,f1_score
+Qwen2_5_1_5B_SoftPrompt,answer unknown,BB/Known unknowns,NA,0.3783783783783784,1.0,0.5490196078431373
+Qwen2_5_1_5B_SoftPrompt,answer unknown,CoCoNot/Unknowns,NA,1.0,0.9333333333333333,0.9655172413793104
+Qwen2_5_1_5B_SoftPrompt,answer unknown,CoCoNot/Unsupported,NA,0.5384615384615384,0.8504672897196262,0.6594202898550725
+Qwen2_5_1_5B_SoftPrompt,answer unknown,KUQ/Future unknowns,NA,0.5938189845474614,1.0,0.7451523545706371
+Qwen2_5_1_5B_SoftPrompt,answer unknown,KUQ/Unsolved problems,NA,0.4322250639386189,1.0,0.6035714285714285
+Qwen2_5_1_5B_SoftPrompt,false premise,CoCoNot/False presumptions,NA,0.4550898203592814,1.0,0.6255144032921811
+Qwen2_5_1_5B_SoftPrompt,false premise,FalseQA,NA,0.46904024767801855,1.0,0.6385669125395153
+Qwen2_5_1_5B_SoftPrompt,false premise,KUQ/False assumptions,NA,0.5513784461152882,1.0,0.7108239095315024
+Qwen2_5_1_5B_SoftPrompt,false premise,QAQA,NA,0.45297504798464494,1.0,0.6235138705416117
+Qwen2_5_1_5B_SoftPrompt,stale,CoCoNot/Temporal,NA,1.0,1.0,1.0
+Qwen2_5_1_5B_SoftPrompt,subjective,CoCoNot/Humanizing,NA,1.0,1.0,1.0
+Qwen2_5_1_5B_SoftPrompt,subjective,CoCoNot/Subjective,NA,1.0,1.0,1.0
+Qwen2_5_1_5B_SoftPrompt,subjective,KUQ/Controversial,NA,0.5009041591320073,1.0,0.6674698795180722
+Qwen2_5_1_5B_SoftPrompt,subjective,MoralChoice,NA,0.4528301886792453,0.03529411764705882,0.06548431105047749
+Qwen2_5_1_5B_SoftPrompt,underspecified context,ALCUNA,NA,0.3252915158825895,0.9585308056872038,0.4857400180126088
+Qwen2_5_1_5B_SoftPrompt,underspecified context,BB/Disambiguate,NA,0.12060301507537688,1.0,0.21524663677130046
+Qwen2_5_1_5B_SoftPrompt,underspecified context,BBQ,NA,0.31064851881505207,1.0,0.4740378741600489
+Qwen2_5_1_5B_SoftPrompt,underspecified context,GPQA-Diamond,NA,0.47368421052631576,1.0,0.6428571428571429
+Qwen2_5_1_5B_SoftPrompt,underspecified context,GSM8K,NA,0.35634625597450875,1.0,0.5254502740798747
+Qwen2_5_1_5B_SoftPrompt,underspecified context,MMLU History,NA,0.47297297297297297,1.0,0.6422018348623854
+Qwen2_5_1_5B_SoftPrompt,underspecified context,MMLU Math,NA,0.42857142857142855,1.0,0.6
+Qwen2_5_1_5B_SoftPrompt,underspecified context,MediQ,NA,0.474449832152182,1.0,0.6435618517581584
+Qwen2_5_1_5B_SoftPrompt,underspecified context,Musique,NA,0.3711705901322154,1.0,0.5413922859830668
+Qwen2_5_1_5B_SoftPrompt,underspecified context,QASPER,NA,0.14184397163120568,0.2898550724637681,0.19047619047619047
+Qwen2_5_1_5B_SoftPrompt,underspecified context,SQuAD 2.0,NA,0.4965055329062318,1.0,0.6635532204709087
+Qwen2_5_1_5B_SoftPrompt,underspecified context,UMWP,NA,0.4137353433835846,1.0,0.5853080568720379
+Qwen2_5_1_5B_SoftPrompt,underspecified context,WorldSense,NA,0.34527687296416937,0.24537037037037038,0.2868741542625169
+Qwen2_5_1_5B_SoftPrompt,underspecified intent,CoCoNot/Incomprehensible,NA,1.0,1.0,1.0
+Qwen2_5_1_5B_SoftPrompt,underspecified intent,KUQ/Ambiguous,NA,0.3486750348675035,1.0,0.5170630816959669
+Qwen2_5_1_5B_SoftPrompt,underspecified intent,SituatedQA/Geo,NA,0.44898276129833825,1.0,0.6197213290460879

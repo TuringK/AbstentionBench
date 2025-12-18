@@ -1,0 +1,12 @@
+# @package _global_
+
+model_name: OLMo_3_7B_Instruct
+
+module:
+  _target_: recipe.models.OLMo_3_7B_Instruct
+  temperature: 0.8
+  top_p: 0.95
+  max_tokens: 4000
+  convert_prompt_to_chat: True
+  tensor_parallel_size: 1
+  max_model_len: 32768

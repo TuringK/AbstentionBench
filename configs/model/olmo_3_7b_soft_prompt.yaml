@@ -1,0 +1,11 @@
+# @package _global_
+
+model_name: OLMo_3_7B_SoftPrompt
+
+module:
+  _target_: recipe.models_soft_prompt.OLMo_3_7B_SoftPrompt
+  soft_prompt_path: /mnt/parscratch/users/acb20df/private/TuringProj/AbstentionBench/PromptTuning/trained_models/olmo_3_7B_soft_prompt-50
+  temperature: 0.8
+  top_p: 0.95
+  max_new_tokens: 4000
+  tensor_parallel_size: 1

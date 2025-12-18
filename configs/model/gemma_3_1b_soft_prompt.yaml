@@ -1,0 +1,12 @@
+# @package _global_
+
+model_name: Gemma_3_1B_SoftPrompt
+
+module:
+  _target_: recipe.models_soft_prompt.Gemma_3_1B_SoftPrompt
+  soft_prompt_path: /mnt/parscratch/users/acb20df/private/TuringProj/AbstentionBench/PromptTuning/trained_models/gemma_3_1b_soft_prompt
+  temperature: 0.8
+  top_p: 0.95
+  max_new_tokens: 256
+  # Required for AbstentionBench compatibility check (not actually used by HF Transformers)
+  tensor_parallel_size: 1

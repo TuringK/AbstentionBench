@@ -6,23 +6,23 @@
 
 # Optional: if you want to set email and username in activate.sh
 # Warning: mamba env activation will fail, we use python bin directly for that
-source ./activate.sh
+#source ./activate.sh
 
 # Set vars
-DATASETS='glob(*,exclude=dummy)'
-JUDGE=llm_judge_llama_3_1_8B_instruct
+DATASETS='glob(*,exclude=dummy)' #acluna, bbq, freshqa 
+JUDGE=contains_abstention_keyword #llm_judge_llama_3_1_8B_instruct
 SINGLE_JOB=False
-COMMON_DIR_NAME=All_models_Llama8B_judge
+COMMON_DIR_NAME="qwen2_5_1_5B_vanilla"
 
 # Change to match your path
-PYTHON_BIN=/mnt/parscratch/users/${USER_NAME}/private/mamba/envs/abstention-bench/bin/python
-COMMON_DIR=/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/${COMMON_DIR_NAME}
+PYTHON_BIN=/mnt/parscratch/users/acb20df/private/mamba/envs/abstention-bench/bin/python
+COMMON_DIR=/mnt/parscratch/users/acb20df/private/TuringProj/AbstentionBench/PromptTuning/results/vanilla/${COMMON_DIR_NAME}
 
 # Models to iterate
 MODELS=(
-  "gemma_3_1B"
+  #"gemma_3_1B"
   "qwen2_5_1_5B_instruct"
-  "allenai_llama_3_1_tulu_3_1_8B"
+  #"allenai_llama_3_1_tulu_3_1_8B"
 )
 
 # Check if email was set in activate.sh

@@ -205,3 +205,10 @@ __marimo__/
 
 playground*.ipynb
 data/*
+
+logs/
+*.arrow
+PromptTuning/datasets
+PromptTuning/results
+PromptTuning/trained_models
+PromptTuning/results_archive

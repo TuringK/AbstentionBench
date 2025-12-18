@@ -1,0 +1,12 @@
+# @package _global_
+
+model_name: Qwen2_5_1_5B_SoftPrompt
+
+module:
+  _target_: recipe.models_soft_prompt.Qwen2_5_1_5B_SoftPrompt
+  soft_prompt_path: /mnt/parscratch/users/acb20df/private/TuringProj/AbstentionBench/PromptTuning/trained_models/qwen2_5_1_5B_soft_prompt-50tok-FT
+  temperature: 0.8
+  top_p: 0.95
+  max_new_tokens: 256
+  # Required for AbstentionBench compatibility check (not actually used by HF Transformers)
+  tensor_parallel_size: 1
