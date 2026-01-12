@@ -57,7 +57,7 @@ class RulebreakersDataset(AbstentionDataset):
             context=f"Suppose we are told that {item['premise1'].replace('If ', 'if ')} "
                     f"As a matter of fact, {item['premise2']}",  # .replacing with lowercase 'if' for grammaticality
             question="What conclusion, if any, follows from the Premises? "
-                     "If you think nothing follows from the Premises, answer 'Nothing follows'.",
+                     "If you think nothing follows from the Premises, answer 'Unable to draw conclusion'.",
         )
         should_abstain = "Nothing follows" in item["target_correct_conclusion"]
         reference_answers = (
