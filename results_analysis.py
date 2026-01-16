@@ -78,8 +78,12 @@ Examples:
     )
     parser.add_argument(
         "--find-best",
-        action="store_true",
-        help="Find and print the best performing vector across all metrics (steering mode only)."
+        type=str,
+        nargs="*",
+        default=None,
+        help="Find and print the best performing vector across a list of metrics (steering mode only)."
+             " If provided without metrics (just --find-best) the script will use the default"
+             " metrics: ['f1_score', 'precision', 'recall'].",
     )
     parser.add_argument(
         "--debug",
@@ -432,8 +436,13 @@ if __name__ == "__main__":
         save_results(results_df, args.output)
     
     # find and print best vector if requested (steering mode only)
-    if args.steering_dir and args.find_best:
-        best = find_best_vector_overall(results_df)
+    if args.steering_dir and args.find_best is not None:
+        if args.find_best:
+            best = find_best_vector_overall(results_df, metrics=args.find_best)
+        else:
+            # flag present but no metrics -> use default metrics in function
+            best = find_best_vector_overall(results_df)
+            
         if "error" in best:
             print(f"\nError finding best vector: {best['error']}")
         else:
