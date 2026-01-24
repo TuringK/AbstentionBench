@@ -1,0 +1,7 @@
+# @package _global_
+
+dataset_name: RulebreakersDataset
+
+datamodule:
+  _target_: recipe.abstention_datasets.rulebreakers.${dataset_name}
+  max_num_samples: null
