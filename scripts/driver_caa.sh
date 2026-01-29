@@ -6,8 +6,11 @@ declare -A MODEL_DIRS
 
 # MODEL_DIRS["qwen2_5_1_5B_instruct"]="Qwen2_5_1_5B_Instruct"
 # MODEL_DIRS["qwen2_5_0_5B_instruct"]="Qwen2_5_0_5B_Instruct"
+# MODEL_DIRS["qwen2_5_3B_instruct"]="Qwen2_5_3B_Instruct"
+# MODEL_DIRS["qwen2_5_7B_instruct"]="Qwen2_5_7B_Instruct"
 # MODEL_DIRS["gemma_3_1B_instruct"]="Gemma3_1B_Instruct" 
-MODEL_DIRS["olmo_3_7B_instruct"]="Olmo3_7B_Instruct"
+# MODEL_DIRS["olmo_3_7B_instruct"]="Olmo3_7B_Instruct"
+MODEL_DIRS["allenai_llama_3_1_tulu_3_1_8B"]="Llama3_1_Tulu_3_1_8B"
 
 # loop through the keys of the map
 for model_id in "${!MODEL_DIRS[@]}"; do
