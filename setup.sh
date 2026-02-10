@@ -1,7 +1,7 @@
 # Create and activate the new environment as per the environment.yml file
-mamba env create -f environment.yml
+# mamba env create -f environment.yml
 
-mamba activate abstention-bench
+# mamba activate abstention-bench
 
 # Install uv for faster and clearer dependacy management
 pip install uv
