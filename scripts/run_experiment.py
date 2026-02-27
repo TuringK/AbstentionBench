@@ -6,13 +6,13 @@ for each model, auto-detecting layer ranges from vector files.
 
 Usage:
     # Dry run (print commands without submitting)
-    python scripts/run_experiment.py configs/experiment/caa_tulu8b.yaml --dry-run
+    python scripts/run_experiment.py configs/experiment/caa_all.yaml --dry-run
 
     # Submit all models
-    python scripts/run_experiment.py configs/experiment/caa_tulu8b.yaml
+    python scripts/run_experiment.py configs/experiment/caa_all.yaml
 
     # Submit only a specific model
-    python scripts/run_experiment.py configs/experiment/caa_tulu8b.yaml --model allenai_llama_3_1_tulu_3_1_8B
+    python scripts/run_experiment.py configs/experiment/caa_all.yaml --model allenai_llama_3_1_tulu_3_1_8B
 
 Environment:
     Requires env.sh to be sourced first (sets PROJECT_ROOT, PYTHON_BIN, etc.)
@@ -268,7 +268,7 @@ def main():
 
         if args.dry_run:
             print(f"\n  [DRY RUN] Would execute:")
-            print(f"    {' \\\n      '.join(cmd)}")
+            print("    " + " \\\n      ".join(cmd))
             print()
         else:
             print(f"  Submitting...")
