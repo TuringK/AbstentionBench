@@ -21,8 +21,8 @@ if [[ -z "$TARGET_MODEL_ID" ]] || [[ -z "$TARGET_MODEL_DIR" ]]; then
   exit 1
 fi
 
-# DATASETS='glob(*,exclude=dummy)'
-DATASETS=rulebreakers
+DATASETS='glob(*,exclude=dummy)'
+# DATASETS=rulebreakers
 JUDGE=contains_abstention_keyword
 SINGLE_JOB=True
 

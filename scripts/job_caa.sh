@@ -15,7 +15,7 @@ fi
 STEERING_VECTOR_IDX="${SLURM_ARRAY_TASK_ID}"
 STEERING_VECTOR_COEFF=1.0
 
-STEERING_VECTOR_PATH="/mnt/parscratch/users/acb22av/private/projects/AbstentionBench/data/vectors/${TARGET_MODEL_DIR}/vec_layer_${STEERING_VECTOR_IDX}.pt"
+STEERING_VECTOR_PATH="/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/data/vectors/${TARGET_MODEL_DIR}/vec_layer_${STEERING_VECTOR_IDX}.pt"
 
 DATASETS='glob(*,exclude=dummy)'
 JUDGE=contains_abstention_keyword

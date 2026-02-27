@@ -1,6 +1,8 @@
 #!/bin/bash
 
-VECTOR_BASE_PATH="/mnt/parscratch/users/acb22av/private/projects/AbstentionBench/data/vectors"
+source ./activate.sh
+
+VECTOR_BASE_PATH="/mnt/parscratch/users/${USER_NAME}/private/projects/AbstentionBench/data/vectors"
 
 declare -A MODEL_DIRS
 

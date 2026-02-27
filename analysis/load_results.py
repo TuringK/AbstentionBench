@@ -181,7 +181,7 @@ class Results:
                     dataset_name, response
                 )
 
-                response_flat_dict = response_flat_dict | abstention_detector_parameters
+                response_flat_dict = response_flat_dict | (abstention_detector_parameters or {})
                 response_flat_dicts.append(response_flat_dict)
         return response_flat_dicts
 
