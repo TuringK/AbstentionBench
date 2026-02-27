@@ -207,3 +207,5 @@ playground*.ipynb
 data/*
 
 logs
+
+.DS_Store
