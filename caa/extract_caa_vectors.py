@@ -1,10 +1,13 @@
 import argparse
 import os
+from collections import defaultdict
+
 import torch
 import pandas as pd
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 from recipe.system_prompt import SYSTEM_PROMPT
+
 
 def extract_vectors(args):
     print(f"Loading model: {args.model_name}")
@@ -21,7 +24,13 @@ def extract_vectors(args):
     
     df = df.dropna(subset=["response"])
     
-    # get (abstain, non-abstain) pairs
+    # parse excluded scenarios
+    excluded = set()
+    if args.exclude_scenarios:
+        excluded = {s.strip() for s in args.exclude_scenarios.split(",")}
+        print(f"Excluding scenarios: {excluded}")
+    
+    # get (abstain, non-abstain) pairs with scenario info
     pairs = []
     grouped = df.groupby("pair_id")
     
@@ -33,22 +42,41 @@ def extract_vectors(args):
         non_abstain_row = group[group["did_abstain"] == False]
         
         if len(abstain_row) == 1 and len(non_abstain_row) == 1:
+            scenario = str(abstain_row.iloc[0].get("scenario", "unknown")).strip()
+            
+            # skip excluded scenarios
+            if scenario in excluded:
+                continue
+                
             pairs.append({
                 "question": abstain_row.iloc[0]["question"],
                 "abstain_response": abstain_row.iloc[0]["response"],
-                "non_abstain_response": non_abstain_row.iloc[0]["response"]
+                "non_abstain_response": non_abstain_row.iloc[0]["response"],
+                "scenario": scenario,
             })
 
-    print(f"Found {len(pairs)} valid pairs.")
+    print(f"Found {len(pairs)} valid pairs (after exclusions).")
+    
+    # print scenario distribution
+    scenario_counts = defaultdict(int)
+    for p in pairs:
+        scenario_counts[p["scenario"]] += 1
+    print("\nScenario distribution:")
+    for scenario, count in sorted(scenario_counts.items(), key=lambda x: -x[1]):
+        pct = 100.0 * count / len(pairs) if pairs else 0
+        print(f"  {scenario:30s} {count:5d}  ({pct:5.1f}%)")
+    print()
     
     if args.max_pairs is not None and len(pairs) > args.max_pairs:
         print(f"Limiting to {args.max_pairs} pairs.")
         pairs = pairs[:args.max_pairs]
     
-    diff_vectors = []
+    # compute per-pair diff vectors
+    diff_vectors_by_scenario = defaultdict(list)
 
     for pair in pairs:
         question = pair["question"]
+        scenario = pair["scenario"]
         
         responses = [pair["abstain_response"], pair["non_abstain_response"]]
         
@@ -64,7 +92,6 @@ def extract_vectors(args):
         prompt_len = prompt_ids.shape[1]
         
         # run forward pass for both responses
-        # calculate: mean(act_abstain) - mean(act_non_abstain)
         activations = {}
         
         for i, response in enumerate(responses):    
@@ -78,32 +105,43 @@ def extract_vectors(args):
             hidden_state = outputs.hidden_states[args.layer_idx + 1]
             
             # extract only the response tokens (exclude prompt)
-            # shape: [1, seq_len, hidden_dim]
             response_acts = hidden_state[:, prompt_len:, :]
             
             # use only the first 10 tokens, or the length of the response, whichever is shorter
             num_tokens = response_acts.shape[1]
             slice_len = min(num_tokens, 10)
-            
-            # sanity check
-            # if i == 0:
-            #     sliced_ids = inputs.input_ids[0, prompt_len : prompt_len+slice_len]
-            #     print(f"DEBUG - Actual tokens being averaged: {tokenizer.decode(sliced_ids)}")
                 
             mean_act = response_acts[:, :slice_len, :].mean(dim=1).squeeze()
             
             activations[label] = mean_act
 
         diff = activations["abstain"] - activations["non_abstain"]
-        diff_vectors.append(diff)
+        diff_vectors_by_scenario[scenario].append(diff)
 
-    # average over dataset
-    if not diff_vectors:
+    # aggregate
+    all_diffs = [d for diffs in diff_vectors_by_scenario.values() for d in diffs]
+    if not all_diffs:
         print("No vectors extracted.")
         return
 
-    stacked_diffs = torch.stack(diff_vectors)
-    mean_steering_vector = stacked_diffs.mean(dim=0)
+    if args.weighted:
+        # scenario-weighted: compute per-scenario mean, then uniform average
+        print("Using scenario-weighted aggregation:")
+        scenario_means = []
+        for scenario in sorted(diff_vectors_by_scenario.keys()):
+            diffs = diff_vectors_by_scenario[scenario]
+            scenario_mean = torch.stack(diffs).mean(dim=0)
+            scenario_means.append(scenario_mean)
+            marker = " ⚠ LOW" if len(diffs) < 30 else ""
+            print(f"  {scenario:30s}  {len(diffs):5d} pairs{marker}")
+        
+        mean_steering_vector = torch.stack(scenario_means).mean(dim=0)
+        print(f"\nAggregated {len(scenario_means)} scenario means into final vector.")
+    else:
+        # naive: global mean (original behavior)
+        print("Using naive (global mean) aggregation.")
+        stacked_diffs = torch.stack(all_diffs)
+        mean_steering_vector = stacked_diffs.mean(dim=0)
     
     # save
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
@@ -134,6 +172,10 @@ if __name__ == "__main__":
     parser.add_argument("--layer_idx", type=int, required=True, help="Layer index to extract from")
     parser.add_argument("--use_system_prompt", action="store_true")
     parser.add_argument("--max_pairs", type=int, default=None, help="Max pairs to process")
+    parser.add_argument("--weighted", action="store_true",
+        help="Use scenario-weighted extraction (uniform weight per scenario)")
+    parser.add_argument("--exclude_scenarios", type=str, default=None,
+        help="Comma-separated scenarios to exclude, e.g. 'stale,subjective'")
        
     args = parser.parse_args()
     extract_vectors(args)
