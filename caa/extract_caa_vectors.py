@@ -21,7 +21,7 @@ def extract_vectors(args):
     
     df = df.dropna(subset=["response"])
     
-    # group by pair_id to get (abstain, non-abstain) pairs
+    # get (abstain, non-abstain) pairs
     pairs = []
     grouped = df.groupby("pair_id")
     
@@ -94,7 +94,6 @@ def extract_vectors(args):
             
             activations[label] = mean_act
 
-        # compute difference
         diff = activations["abstain"] - activations["non_abstain"]
         diff_vectors.append(diff)
 
