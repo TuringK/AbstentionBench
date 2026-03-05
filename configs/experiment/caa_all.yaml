@@ -24,7 +24,7 @@ caa:
   # layers: auto-detected from vector files. Or set explicitly, e.g. "15-31"
 
 slurm:
-  partition: gpu-h100-nvl
+  partition: gpu
   qos: gpu
   gres: "gpu:1"
   cpus_per_task: 8

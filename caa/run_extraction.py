@@ -1,18 +1,21 @@
 """
 CAA Vector Extraction Orchestrator
 
-Reads a declarative YAML config and submits SLURM array jobs to extract
-steering vectors for each model across a range of layers.
+Reads a declarative YAML config and submits SLURM array jobs (or runs
+locally) to extract steering vectors for each model across a range of layers.
 
 Usage:
     # Dry run (print commands without submitting)
     python caa/run_extraction.py configs/experiment/extract_all.yaml --dry-run
 
-    # Submit all models
+    # Submit all models via SLURM
     python caa/run_extraction.py configs/experiment/extract_all.yaml
 
-    # Submit only a specific model
-    python caa/run_extraction.py configs/experiment/extract_all.yaml --model Qwen2_5_0_5B_Instruct
+    # Run locally / in an interactive session (no sbatch)
+    python caa/run_extraction.py configs/experiment/extract_all.yaml --local
+
+    # Local, single model
+    python caa/run_extraction.py configs/experiment/extract_all.yaml --local --model Qwen2_5_0_5B_Instruct
 
 Environment:
     Requires env.sh to be sourced first (sets PROJECT_ROOT, PYTHON_BIN, etc.)
@@ -20,6 +23,7 @@ Environment:
 
 import argparse
 import os
+import subprocess
 import sys
 from typing import Dict, Optional
 
@@ -110,15 +114,70 @@ def build_extraction_sbatch(
     return cmd
 
 
+def run_local(
+    config: ExtractionConfig,
+    model_id: str,
+    hf_model_name: str,
+    min_layer: int,
+    max_layer: int,
+    project_root: str,
+    python_bin: str,
+    dry_run: bool = False,
+) -> None:
+    """Run extraction locally, looping through layers sequentially."""
+
+    data_path = f"{project_root}/{config.data_path}"
+    output_dir = f"{project_root}/{config.output_base}/{model_id}"
+
+    for layer_idx in range(min_layer, max_layer + 1):
+        output_file = f"{output_dir}/vec_layer_{layer_idx}.pt"
+
+        cmd = [
+            python_bin, "caa/extract_caa_vectors.py",
+            "--model_name", hf_model_name,
+            "--data_path", data_path,
+            "--output_path", output_file,
+            "--layer_idx", str(layer_idx),
+        ]
+
+        if config.extraction.use_system_prompt:
+            cmd.append("--use_system_prompt")
+        if config.extraction.weighted:
+            cmd.append("--weighted")
+        if config.extraction.exclude_scenarios:
+            cmd.extend(["--exclude_scenarios", config.extraction.exclude_scenarios])
+
+        if dry_run:
+            print(f"  [DRY RUN] Layer {layer_idx}: {' '.join(cmd)}")
+            continue
+
+        print(f"\nLayer {layer_idx}/{max_layer}")
+        print(f"Output: {output_file}\n")
+
+        result = subprocess.run(cmd)
+        if result.returncode != 0:
+            print(f"Extraction failed for layer {layer_idx} (exit {result.returncode})",
+                  file=sys.stderr)
+            sys.exit(1)
+
+    if not dry_run:
+        print(f"\nAll layers ({min_layer}-{max_layer}) extracted for {model_id}.")
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="CAA Vector Extraction Orchestrator — submit SLURM jobs from YAML configs"
+        description="CAA Vector Extraction Orchestrator — submit SLURM jobs or run locally"
     )
     parser.add_argument(
         "config",
         help="Path to extraction YAML config (e.g. configs/experiment/extract_all.yaml)",
     )
     add_common_cli_args(parser)
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Run extraction locally (sequential) instead of submitting SLURM jobs",
+    )
     args = parser.parse_args()
 
     # load env vars
@@ -127,14 +186,15 @@ def main():
 
     # load config
     config = load_yaml_config(args.config, ExtractionConfig)
-    print(f"Extraction job: {config.name}")
+    mode_label = "local" if args.local else "sbatch"
+    print(f"Extraction job: {config.name} ({mode_label})")
     print(f"Project root: {project_root}")
     print(f"Output base: {config.output_base}")
     if config.extraction.weighted:
         excl = config.extraction.exclude_scenarios or "(none)"
-        print(f"Mode: scenario-weighted (excluding: {excl})")
+        print(f"Aggregation: scenario-weighted (excluding: {excl})")
     else:
-        print(f"Mode: naive (global mean)")
+        print(f"Aggregation: naive (global mean)")
     print()
 
     # filter models
@@ -154,22 +214,32 @@ def main():
             )
             print(f"  Layers: {min_layer}-{max_layer} (auto-detected)")
 
-        # sbatch
-        cmd = build_extraction_sbatch(
-            config=config,
-            model_id=model_id,
-            hf_model_name=hf_model_name,
-            min_layer=min_layer,
-            max_layer=max_layer,
-            project_root=project_root,
-            python_bin=python_bin,
-        )
-
-        submit_sbatch(cmd, dry_run=args.dry_run)
+        if args.local:
+            run_local(
+                config=config,
+                model_id=model_id,
+                hf_model_name=hf_model_name,
+                min_layer=min_layer,
+                max_layer=max_layer,
+                project_root=project_root,
+                python_bin=python_bin,
+                dry_run=args.dry_run,
+            )
+        else:
+            cmd = build_extraction_sbatch(
+                config=config,
+                model_id=model_id,
+                hf_model_name=hf_model_name,
+                min_layer=min_layer,
+                max_layer=max_layer,
+                project_root=project_root,
+                python_bin=python_bin,
+            )
+            submit_sbatch(cmd, dry_run=args.dry_run)
 
     if args.dry_run:
-        print("Dry run complete. No jobs were submitted.")
-    else:
+        print("Dry run complete. No jobs were submitted/executed.")
+    elif not args.local:
         print("All jobs submitted.")
 
 
