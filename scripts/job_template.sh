@@ -40,7 +40,7 @@ fi
 env -u SLURM_MEM_PER_CPU -u SLURM_MEM_PER_NODE -u SLURM_MEM_PER_GPU \
   "${EXP_PYTHON_BIN}" -u main.py -m \
     mode="${EXP_MODE}" \
-    dataset="'${EXP_DATASETS}'" \
+    dataset="${EXP_DATASETS}" \
     model="${EXP_MODEL_ID}" \
     abstention_detector="${EXP_JUDGE}" \
     run_single_job_for_inference_and_judge="${EXP_SINGLE_JOB}" \

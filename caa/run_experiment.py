@@ -96,7 +96,7 @@ def build_sbatch_command(
         f"EXP_MODEL_ID={model_id}",
         f"EXP_VECTOR_DIR={vector_dir}",
         f"EXP_COMMON_DIR_BASE={common_dir_base}",
-        f"EXP_DATASETS={config.datasets}",
+        f"EXP_DATASETS='{config.datasets}'",
         f"EXP_JUDGE={config.judge}",
         f"EXP_SINGLE_JOB={config.single_job}",
         f"EXP_MODE={config.mode}",
