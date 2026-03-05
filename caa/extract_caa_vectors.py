@@ -132,7 +132,7 @@ def extract_vectors(args):
             diffs = diff_vectors_by_scenario[scenario]
             scenario_mean = torch.stack(diffs).mean(dim=0)
             scenario_means.append(scenario_mean)
-            marker = " ⚠ LOW" if len(diffs) < 30 else ""
+            marker = " (low count)" if len(diffs) < 30 else ""
             print(f"  {scenario:30s}  {len(diffs):5d} pairs{marker}")
         
         mean_steering_vector = torch.stack(scenario_means).mean(dim=0)
