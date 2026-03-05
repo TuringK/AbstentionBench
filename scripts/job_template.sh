@@ -17,7 +17,7 @@ LAYER_IDX="${SLURM_ARRAY_TASK_ID}"
 VECTOR_PATH="${EXP_VECTOR_DIR}/vec_layer_${LAYER_IDX}.pt"
 
 if [[ ! -f "$VECTOR_PATH" ]]; then
-    echo "Vector file not found: $VECTOR_PATH — skipping layer ${LAYER_IDX}"
+    echo "Vector file not found: $VECTOR_PATH : skipping layer ${LAYER_IDX}"
     exit 0
 fi
 

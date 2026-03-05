@@ -166,7 +166,7 @@ def run_local(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="CAA Vector Extraction Orchestrator — submit SLURM jobs or run locally"
+        description="CAA Vector Extraction Orchestrator - submit SLURM jobs or run locally"
     )
     parser.add_argument(
         "config",

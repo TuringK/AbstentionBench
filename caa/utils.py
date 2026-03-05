@@ -111,9 +111,9 @@ def submit_sbatch(cmd: list[str], dry_run: bool = False) -> None:
         print(f"  Submitting...")
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode == 0:
-            print(f"  ✓ {result.stdout.strip()}")
+            print(f"  [success] {result.stdout.strip()}")
         else:
-            print(f"  ✗ sbatch failed (exit {result.returncode}):", file=sys.stderr)
+            print(f"  [error] sbatch failed (exit {result.returncode}):", file=sys.stderr)
             print(f"    {result.stderr.strip()}", file=sys.stderr)
             sys.exit(1)
         print()
