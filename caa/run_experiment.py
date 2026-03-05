@@ -6,13 +6,13 @@ for each model, auto-detecting layer ranges from vector files.
 
 Usage:
     # Dry run (print commands without submitting)
-    python scripts/run_experiment.py configs/experiment/caa_all.yaml --dry-run
+    python caa/run_experiment.py configs/experiment/caa_all.yaml --dry-run
 
     # Submit all models
-    python scripts/run_experiment.py configs/experiment/caa_all.yaml
+    python caa/run_experiment.py configs/experiment/caa_all.yaml
 
     # Submit only a specific model
-    python scripts/run_experiment.py configs/experiment/caa_all.yaml --model allenai_llama_3_1_tulu_3_1_8B
+    python caa/run_experiment.py configs/experiment/caa_all.yaml --model allenai_llama_3_1_tulu_3_1_8B
 
 Environment:
     Requires env.sh to be sourced first (sets PROJECT_ROOT, PYTHON_BIN, etc.)
@@ -20,30 +20,28 @@ Environment:
 
 import argparse
 import os
-import re
-import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, Optional
 
-import yaml
 from pydantic import BaseModel, field_validator
 
-
-# config schema
-
-class SlurmConfig(BaseModel):
-    partition: str = "gpu"
-    qos: str = "gpu"
-    gres: str = "gpu:1"
-    cpus_per_task: int = 8
-    mem: str = "82G"
-    time: str = "04:00:00"
+from caa.utils import (
+    SlurmConfig,
+    add_common_cli_args,
+    detect_layers_from_vectors,
+    filter_models,
+    get_env_var,
+    load_yaml_config,
+    parse_layer_range,
+    submit_sbatch,
+)
 
 
 class CAAConfig(BaseModel):
     coeff: float = 1.0
     layers: Optional[str] = None
+
 
 class ExperimentConfig(BaseModel):
     name: str
@@ -67,66 +65,6 @@ class ExperimentConfig(BaseModel):
             )
         return v
 
-
-# env helpers
-
-def get_env_var(name: str, dry_run: bool = False) -> str:
-    """Get a required environment variable (from env.sh).
-    In dry-run mode, returns a placeholder instead of crashing."""
-    value = os.environ.get(name)
-    if not value:
-        if dry_run:
-            placeholder = f"<{name}>"
-            print(f"  Warning: ${name} not set, using placeholder '{placeholder}'")
-            return placeholder
-        print(f"Error: ${name} is not set. Source env.sh first:", file=sys.stderr)
-        print(f"  source env.sh", file=sys.stderr)
-        sys.exit(1)
-    return value
-
-
-# layer auto-detection
-
-def detect_layers(vector_dir: Path, dry_run: bool = False) -> tuple[int, int]:
-    """
-    Scan vector_dir for vec_layer_N.pt files and return (min_layer, max_layer).
-    In dry-run mode, returns a placeholder range if the directory doesn't exist.
-    """
-    if not vector_dir.is_dir():
-        if dry_run:
-            print(f"  Warning: Vector dir not found ({vector_dir}), using placeholder range 0-31")
-            return 0, 31
-        print(f"Error: Vector directory not found: {vector_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    pattern = re.compile(r"vec_layer_(\d+)\.pt$")
-    layers = []
-    for f in vector_dir.iterdir():
-        m = pattern.match(f.name)
-        if m:
-            layers.append(int(m.group(1)))
-
-    if not layers:
-        if dry_run:
-            print(f"  Warning: No vec_layer_*.pt files in {vector_dir}, using placeholder range 0-31")
-            return 0, 31
-        print(f"Error: No vec_layer_*.pt files in {vector_dir}", file=sys.stderr)
-        sys.exit(1)
-
-    layers.sort()
-    return layers[0], layers[-1]
-
-
-def parse_layer_range(layer_spec: str) -> tuple[int, int]:
-    """Parse explicit layer spec like '15-31'."""
-    parts = layer_spec.split("-")
-    if len(parts) != 2:
-        print(f"Error: Invalid layer range '{layer_spec}'. Expected 'MIN-MAX'.", file=sys.stderr)
-        sys.exit(1)
-    return int(parts[0]), int(parts[1])
-
-
-# SLURM submission
 
 def build_sbatch_command(
     config: ExperimentConfig,
@@ -183,38 +121,15 @@ def build_sbatch_command(
     return cmd
 
 
-# main
-
-def load_config(path: str) -> ExperimentConfig:
-    """Load and validate an experiment YAML config."""
-    with open(path) as f:
-        raw = yaml.safe_load(f)
-    try:
-        return ExperimentConfig(**raw)
-    except Exception as e:
-        print(f"Error loading config {path}:\n{e}", file=sys.stderr)
-        sys.exit(1)
-
-
 def main():
     parser = argparse.ArgumentParser(
         description="CAA Experiment Orchestrator — submit SLURM jobs from YAML configs"
     )
     parser.add_argument(
         "config",
-        help="Path to experiment YAML config (e.g. configs/experiment/caa_tulu8b.yaml)",
+        help="Path to experiment YAML config (e.g. configs/experiment/caa_all.yaml)",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Print sbatch commands without submitting",
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        default=None,
-        help="Run only this model (must be a key in the experiment's models map)",
-    )
+    add_common_cli_args(parser)
     args = parser.parse_args()
 
     # load env vars
@@ -222,23 +137,14 @@ def main():
     python_bin = get_env_var("PYTHON_BIN", dry_run=args.dry_run)
     user_email = os.environ.get("USER_EMAIL", "")
 
-    # load env config
-    config = load_config(args.config)
+    # load config
+    config = load_yaml_config(args.config, ExperimentConfig)
     print(f"Experiment: {config.name}")
     print(f"Project root: {project_root}")
     print()
 
-    # filter models if --model is specified
-    models = config.models
-    if args.model:
-        if args.model not in models:
-            available = ", ".join(models.keys())
-            print(
-                f"Error: Model '{args.model}' not in config. Available: {available}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        models = {args.model: models[args.model]}
+    # filter models
+    models = filter_models(config.models, args.model)
 
     for model_id, vector_dir_name in models.items():
         vector_dir = Path(project_root) / "data" / "vectors" / vector_dir_name
@@ -251,7 +157,7 @@ def main():
         else:
             print(f"Model: {model_id}")
             print(f"  Scanning {vector_dir} for vectors...")
-            min_layer, max_layer = detect_layers(vector_dir, dry_run=args.dry_run)
+            min_layer, max_layer = detect_layers_from_vectors(vector_dir, dry_run=args.dry_run)
             print(f"  Layers: {min_layer}-{max_layer} (auto-detected)")
 
         # sbatch
@@ -266,20 +172,7 @@ def main():
             user_email=user_email,
         )
 
-        if args.dry_run:
-            print(f"\n  [DRY RUN] Would execute:")
-            print("    " + " \\\n      ".join(cmd))
-            print()
-        else:
-            print(f"  Submitting...")
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"  ✓ {result.stdout.strip()}")
-            else:
-                print(f"  ✗ sbatch failed (exit {result.returncode}):", file=sys.stderr)
-                print(f"    {result.stderr.strip()}", file=sys.stderr)
-                sys.exit(1)
-            print()
+        submit_sbatch(cmd, dry_run=args.dry_run)
 
     if args.dry_run:
         print("Dry run complete. No jobs were submitted.")

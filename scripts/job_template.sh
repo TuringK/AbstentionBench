@@ -3,18 +3,16 @@
 #SBATCH --output=scripts/logs/%x_%A_%a.out
 #SBATCH --error=scripts/logs/%x_%A_%a.err
 
-# ============================================================
 # Generic SLURM job template for CAA experiments.
 # All experiment-specific values are passed via environment
 # variables (EXP_*) set by run_experiment.py.
-# ============================================================
 
 module load GCC
 module load CUDA/12.4
 
 export VLLM_USE_V1=0
 
-# --- Resolve paths for this array task ---
+# Resolve paths for this array task
 LAYER_IDX="${SLURM_ARRAY_TASK_ID}"
 VECTOR_PATH="${EXP_VECTOR_DIR}/vec_layer_${LAYER_IDX}.pt"
 
@@ -32,13 +30,13 @@ echo "Vector: ${VECTOR_PATH}"
 echo "Coeff:  ${EXP_COEFF}"
 echo "==============="
 
-# --- Build optional email args ---
+# Build optional email args
 EMAIL_ARGS=""
 if [[ -n "${EXP_USER_EMAIL}" ]]; then
     EMAIL_ARGS="+hydra.launcher.additional_parameters.mail-type=ALL +hydra.launcher.additional_parameters.mail-user=${EXP_USER_EMAIL}"
 fi
 
-# --- Run main.py ---
+# Run main.py
 env -u SLURM_MEM_PER_CPU -u SLURM_MEM_PER_NODE -u SLURM_MEM_PER_GPU \
   "${EXP_PYTHON_BIN}" -u main.py -m \
     mode="${EXP_MODE}" \
