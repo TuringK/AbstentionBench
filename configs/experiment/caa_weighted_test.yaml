@@ -1,0 +1,29 @@
+name: caa_weighted_test
+
+# model_id: vector_directory_name
+models:
+  qwen2_5_0_5B_instruct: Qwen2_5_0_5B_Instruct
+  qwen2_5_7B_instruct: Qwen2_5_7B_Instruct
+
+vector_dir: "data/vectors_weighted_test"
+datasets: "glob(*,exclude=dummy)"
+judge: contains_abstention_keyword
+single_job: true
+mode: local
+
+# output directory name pattern: {vector_dir}_{judge_label}_CAA_coeff_{coeff}_{tag}
+# e.g. Llama3_1_Tulu_3_1_8B_Keywords_judge_CAA_coeff_1_0_rulebreakers
+judge_label: Keywords_judge
+tag: all_datasets
+
+caa:
+  coeff: 1.0
+  # layers: auto-detected from vector files. Or set explicitly, e.g. "15-31"
+
+slurm:
+  partition: gpu,gpu-h100,gpu-h100-nvl
+  qos: gpu
+  gres: "gpu:1"
+  cpus_per_task: 8
+  mem: "82G"
+  time: "04:00:00"
