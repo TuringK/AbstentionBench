@@ -1,0 +1,23 @@
+name: extract_weighted_test
+
+# model_id: hf_model_name
+models:
+  Qwen2_5_0_5B_Instruct: Qwen/Qwen2.5-0.5B-Instruct
+  Qwen2_5_7B_Instruct: Qwen/Qwen2.5-7B-Instruct
+
+data_path: data/sample_pairs_with_scenario.csv
+output_base: data/vectors_weighted_no_stale_test
+
+extraction:
+  use_system_prompt: true
+  weighted: true
+  exclude_scenarios: "stale"
+  # layers: auto-detected from HF model config. Or set explicitly, e.g. "11-23"
+
+slurm:
+  partition: gpu
+  qos: gpu
+  gres: "gpu:1"
+  cpus_per_task: 8
+  mem: "82G"
+  time: "02:00:00"
