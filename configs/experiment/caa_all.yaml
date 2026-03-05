@@ -9,6 +9,7 @@ models:
   gemma_3_1B_instruct: Gemma3_1B_Instruct
   allenai_llama_3_1_tulu_3_1_8B: Llama3_1_Tulu_3_1_8B
 
+vector_dir: "data/vectors"
 datasets: "glob(*,exclude=dummy)"
 judge: contains_abstention_keyword
 single_job: true

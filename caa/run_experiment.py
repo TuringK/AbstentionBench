@@ -46,6 +46,7 @@ class CAAConfig(BaseModel):
 class ExperimentConfig(BaseModel):
     name: str
     models: Dict[str, str]
+    vector_dir: str = "data/vectors"
     datasets: str = "glob(*,exclude=dummy)"
     judge: str = "contains_abstention_keyword"
     single_job: bool = True
@@ -78,7 +79,7 @@ def build_sbatch_command(
 ) -> list[str]:
     """Build the sbatch command for a single model."""
 
-    vector_dir = f"{project_root}/data/vectors/{vector_dir_name}"
+    vector_dir = f"{project_root}/{config.vector_dir}/{vector_dir_name}"
 
     # common_dir base path
     coeff_str = str(config.caa.coeff).replace(".", "_")
@@ -147,7 +148,7 @@ def main():
     models = filter_models(config.models, args.model)
 
     for model_id, vector_dir_name in models.items():
-        vector_dir = Path(project_root) / "data" / "vectors" / vector_dir_name
+        vector_dir = Path(project_root) / config.vector_dir / vector_dir_name
 
         # resolve layer range
         if config.caa.layers:
