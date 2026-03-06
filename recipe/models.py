@@ -303,14 +303,25 @@ class VLLMChatModelBase(InferenceModel):
             self._caa_hook_handle.remove()
 
         try:
-            from vllm.distributed.parallel_state import destroy_model_parallel
+            from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
             destroy_model_parallel()
+            destroy_distributed_environment()
         except ImportError:
-            logger.warning("Could not import destroy_model_parallel; skipping parallel state cleanup")
+            logger.warning("Could not import parallel cleanup functions; skipping parallel state cleanup")
 
-        del self.llm
+        if hasattr(self, 'llm'):
+            del self.llm
+        
+        import gc
+        import torch
+        import torch.distributed as dist
+
         gc.collect()
         torch.cuda.empty_cache()
+
+        if dist.is_initialized():
+            dist.destroy_process_group()
+            
         logger.info("vLLM cleanup complete")
 
 
