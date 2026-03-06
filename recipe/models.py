@@ -20,9 +20,11 @@ from typing import Any, Tuple
 import google.generativeai as genai
 import openai
 import torch
+import torch.distributed as dist
 from openai import AsyncAzureOpenAI, AzureOpenAI
 from transformers import AutoTokenizer, pipeline
 from vllm import LLM, SamplingParams
+from vllm.distributed.parallel_state import destroy_distributed_environment, destroy_model_parallel
 
 from recipe.system_prompt import SYSTEM_PROMPT
 
@@ -303,23 +305,18 @@ class VLLMChatModelBase(InferenceModel):
             self._caa_hook_handle.remove()
 
         try:
-            from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
             destroy_model_parallel()
             destroy_distributed_environment()
-        except ImportError:
-            logger.warning("Could not import parallel cleanup functions; skipping parallel state cleanup")
+        except NameError:
+            logger.warning("Could not call parallel cleanup functions; skipping parallel state cleanup")
 
         if hasattr(self, 'llm'):
             del self.llm
         
-        import gc
-        import torch
-        import torch.distributed as dist
-
         gc.collect()
         torch.cuda.empty_cache()
 
-        if dist.is_initialized():
+        if dist.is_available() and dist.is_initialized():
             dist.destroy_process_group()
             
         logger.info("vLLM cleanup complete")
