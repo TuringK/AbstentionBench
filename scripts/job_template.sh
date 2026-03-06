@@ -30,9 +30,9 @@ echo "Vector: ${VECTOR_PATH}"
 echo "Coeff:  ${EXP_COEFF}"
 echo "==============="
 
-# Build optional email args
+# Build optional email args (only for cluster mode; BasicLauncher doesn't support additional_parameters)
 EMAIL_ARGS=""
-if [[ -n "${EXP_USER_EMAIL}" ]]; then
+if [[ -n "${EXP_USER_EMAIL}" ]] && [[ "${EXP_MODE}" != "local" ]]; then
     EMAIL_ARGS="+hydra.launcher.additional_parameters.mail-type=ALL +hydra.launcher.additional_parameters.mail-user=${EXP_USER_EMAIL}"
 fi
 
