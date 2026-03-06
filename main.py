@@ -16,6 +16,7 @@ from typing import List, Optional
 import git
 import hydra
 import submitit
+import torch
 import torch.distributed as dist
 import transformers
 import yaml
@@ -225,6 +226,15 @@ class AbstentionWorkflow:
 
         raw_responses = inference_pipeline.run(indices_subset=indices_subset)
         logger.info("inference finished!")
+
+        # Explicitly destroy the vLLM model to free GPU resources.
+        # Critical in Hydra multirun (-m) where main() is called
+        # multiple times in the same process for different datasets.
+        if hasattr(model, 'cleanup'):
+            model.cleanup()
+        del model
+        torch.cuda.empty_cache()
+
         return raw_responses
 
     def run_abstention_method(self, raw_responses: RawResponses) -> Responses:

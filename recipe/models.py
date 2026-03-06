@@ -9,6 +9,7 @@ Our favorite collection of models
 """
 
 import asyncio
+import gc
 import logging
 import os
 import random
@@ -243,7 +244,7 @@ class VLLMChatModelBase(InferenceModel):
         # most hf models (Llama, Qwen, Mistral) store layers in model.layers
         try:
             target_layer = raw_model.model.layers[layer_idx]
-            target_layer.register_forward_hook(caa_hook)
+            self._caa_hook_handle = target_layer.register_forward_hook(caa_hook)
             logger.info(f"Successfully registered CAA hook on layer {layer_idx}")
         except AttributeError as e:
             logger.error(f"Could not find layer {layer_idx}. Structure path failed. Error: {e}")
@@ -251,7 +252,7 @@ class VLLMChatModelBase(InferenceModel):
             
             try:
                 target_layer = raw_model.model.model.layers[layer_idx]
-                target_layer.register_forward_hook(caa_hook)
+                self._caa_hook_handle = target_layer.register_forward_hook(caa_hook)
                 logger.info(f"Successfully registered CAA hook on layer {layer_idx} (Fallback Path)")
                 
             except AttributeError as fallback_e:
@@ -290,6 +291,27 @@ class VLLMChatModelBase(InferenceModel):
 
         logger.info(responses[:3])
         return responses
+
+    def cleanup(self):
+        """Destroy the vLLM engine and free GPU resources.
+
+        Essential for Hydra multirun (-m) where multiple LLM instances
+        are created sequentially in the same process.
+        """
+        logger.info("Cleaning up vLLM model and freeing GPU resources")
+        if hasattr(self, '_caa_hook_handle'):
+            self._caa_hook_handle.remove()
+
+        try:
+            from vllm.distributed.parallel_state import destroy_model_parallel
+            destroy_model_parallel()
+        except ImportError:
+            logger.warning("Could not import destroy_model_parallel; skipping parallel state cleanup")
+
+        del self.llm
+        gc.collect()
+        torch.cuda.empty_cache()
+        logger.info("vLLM cleanup complete")
 
 
 class Llama3_1_8B_Instruct(VLLMChatModelBase):
