@@ -76,7 +76,7 @@ def build_sbatch_command(
     project_root: str,
     python_bin: str,
     user_email: str,
-) -> list[str]:
+) -> tuple[list[str], dict[str, str]]:
     """Build the sbatch command for a single model."""
 
     vector_dir = f"{project_root}/{config.vector_dir}/{vector_dir_name}"
@@ -91,19 +91,18 @@ def build_sbatch_command(
     job_template = "scripts/job_template.sh"
 
     # env vars to export to the job
-    export_vars = [
-        "ALL",
-        f"EXP_MODEL_ID={model_id}",
-        f"EXP_VECTOR_DIR={vector_dir}",
-        f"EXP_COMMON_DIR_BASE={common_dir_base}",
-        f"EXP_DATASETS={config.datasets}",
-        f"EXP_JUDGE={config.judge}",
-        f"EXP_SINGLE_JOB={config.single_job}",
-        f"EXP_MODE={config.mode}",
-        f"EXP_COEFF={config.caa.coeff}",
-        f"EXP_PYTHON_BIN={python_bin}",
-        f"EXP_USER_EMAIL={user_email}",
-    ]
+    env_vars = {
+        "EXP_MODEL_ID": model_id,
+        "EXP_VECTOR_DIR": str(vector_dir),
+        "EXP_COMMON_DIR_BASE": str(common_dir_base),
+        "EXP_DATASETS": str(config.datasets),
+        "EXP_JUDGE": str(config.judge),
+        "EXP_SINGLE_JOB": str(config.single_job),
+        "EXP_MODE": str(config.mode),
+        "EXP_COEFF": str(config.caa.coeff),
+        "EXP_PYTHON_BIN": str(python_bin),
+        "EXP_USER_EMAIL": str(user_email),
+    }
 
     cmd = [
         "sbatch",
@@ -115,11 +114,11 @@ def build_sbatch_command(
         f"--cpus-per-task={config.slurm.cpus_per_task}",
         f"--mem={config.slurm.mem}",
         f"--time={config.slurm.time}",
-        f"--export={','.join(export_vars)}",
+        "--export=ALL",
         job_template,
     ]
 
-    return cmd
+    return cmd, env_vars
 
 
 def main():
@@ -162,7 +161,7 @@ def main():
             print(f"  Layers: {min_layer}-{max_layer} (auto-detected)")
 
         # sbatch
-        cmd = build_sbatch_command(
+        cmd, env_vars = build_sbatch_command(
             config=config,
             model_id=model_id,
             vector_dir_name=vector_dir_name,
@@ -173,7 +172,9 @@ def main():
             user_email=user_email,
         )
 
-        submit_sbatch(cmd, dry_run=args.dry_run)
+        env = os.environ.copy()
+        env.update(env_vars)
+        submit_sbatch(cmd, dry_run=args.dry_run, env=env)
 
     if args.dry_run:
         print("Dry run complete. No jobs were submitted.")
