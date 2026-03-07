@@ -67,6 +67,12 @@ Examples:
         nargs="+",
         help="List of dataset names to exclude from results."
     )
+    parser.add_argument(
+        "--include-datasets",
+        type=str,
+        nargs="+",
+        help="List of dataset names to specifically include (ignores all others)."
+    )
     
     # output options
     parser.add_argument(
@@ -226,6 +232,7 @@ def process_results_dir(
     filter_training: bool = False,
     training_data_path: str = "data/sample_pairs.csv",
     excluded_datasets: list[str] | None = None,
+    included_datasets: list[str] | None = None,
     debug: bool = False
 ) -> pd.DataFrame:
     """
@@ -236,6 +243,7 @@ def process_results_dir(
         filter_training: Whether to filter out training data.
         training_data_path: Path to the training data CSV file.
         excluded_datasets: List of datasets to exclude.
+        included_datasets: List of datasets to specifically include.
         
     Returns:
         DataFrame containing the results table.
@@ -283,6 +291,22 @@ def process_results_dir(
             r.df = r.df[~mask]
             print(f"Filtered out {initial_len_ds - len(r.df)} rows belonging to datasets: {excluded_datasets}")
 
+    if included_datasets:
+        mask = pd.Series(False, index=r.df.index)
+        if 'dataset_name' in r.df.columns:
+            mask |= r.df['dataset_name'].isin(included_datasets)
+        if 'dataset_name_formatted' in r.df.columns:
+            mask |= r.df['dataset_name_formatted'].isin(included_datasets)
+        
+        initial_len_ds = len(r.df)
+        r.df = r.df[mask]
+        print(f"Kept only {len(r.df)} rows belonging to included datasets: {included_datasets} (filtered out {initial_len_ds - len(r.df)})")
+
+    # Stop if DataFrame is empty after filtering
+    if r.df.empty:
+        print(f"No results left after filtering datasets.")
+        return pd.DataFrame()
+
     table = AbstentionF1ScoreTable(results=r)
     table_df = table.table_df
     
@@ -301,6 +325,7 @@ def process_steering_results(
     filter_training: bool,
     training_data_path: str = "data/sample_pairs.csv",
     excluded_datasets: list[str] | None = None,
+    included_datasets: list[str] | None = None,
     output_path: str | None = None,
     save_per_vector: bool = False,
     debug: bool = False
@@ -314,6 +339,7 @@ def process_steering_results(
         filter_training: Whether to filter out training data.
         training_data_path: Path to the training data CSV file.
         excluded_datasets: List of datasets to exclude.
+        included_datasets: List of datasets to specifically include.
         output_path: Output file path for saving results.
         save_per_vector: Whether to save each vector's results in a separate file.
         
@@ -326,7 +352,14 @@ def process_steering_results(
         results_dir = os.path.join(base_dir, str(idx), "results")
         
         print(f"\nProcessing vector index {idx}...")
-        table_df = process_results_dir(results_dir, filter_training, training_data_path, excluded_datasets, debug=debug)
+        table_df = process_results_dir(
+            results_dir=results_dir, 
+            filter_training=filter_training, 
+            training_data_path=training_data_path, 
+            excluded_datasets=excluded_datasets, 
+            included_datasets=included_datasets,
+            debug=debug
+        )
         
         if not table_df.empty:
             # update model_name_formatted to include steered suffix
@@ -454,6 +487,7 @@ if __name__ == "__main__":
             filter_training=args.filter_training,
             training_data_path=args.training_data,
             excluded_datasets=args.exclude_datasets,
+            included_datasets=args.include_datasets,
             output_path=args.output,
             save_per_vector=args.save_per_vector,
             debug=args.debug,
@@ -465,6 +499,7 @@ if __name__ == "__main__":
             filter_training=args.filter_training,
             training_data_path=args.training_data,
             excluded_datasets=args.exclude_datasets,
+            included_datasets=args.include_datasets,
             debug=args.debug,
         )
     
