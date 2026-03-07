@@ -71,8 +71,7 @@ def build_sbatch_command(
     config: ExperimentConfig,
     model_id: str,
     vector_dir_name: str,
-    min_layer: int,
-    max_layer: int,
+    layer_str: str,
     project_root: str,
     python_bin: str,
     user_email: str,
@@ -107,7 +106,7 @@ def build_sbatch_command(
     cmd = [
         "sbatch",
         f"--job-name={job_name}",
-        f"--array={min_layer}-{max_layer}",
+        f"--array={layer_str}",
         f"--partition={config.slurm.partition}",
         f"--qos={config.slurm.qos}",
         f"--gres={config.slurm.gres}",
@@ -146,27 +145,35 @@ def main():
     # filter models
     models = filter_models(config.models, args.model)
 
+    from caa.utils import parse_vector_indices
+
     for model_id, vector_dir_name in models.items():
         vector_dir = Path(project_root) / config.vector_dir / vector_dir_name
 
-        # resolve layer range
-        if config.caa.layers:
-            min_layer, max_layer = parse_layer_range(config.caa.layers)
+        # resolve layer range or list
+        if args.layers:
+            layers_list = parse_vector_indices(args.layers)
+            layer_str = ",".join(map(str, layers_list))
             print(f"Model: {model_id}")
-            print(f"  Layers: {min_layer}-{max_layer} (from config)")
+            print(f"  Layers: {layer_str} (from CLI subset)")
+        elif config.caa.layers:
+            layers_list = parse_vector_indices([config.caa.layers])
+            layer_str = ",".join(map(str, layers_list))
+            print(f"Model: {model_id}")
+            print(f"  Layers: {layer_str} (from config)")
         else:
             print(f"Model: {model_id}")
             print(f"  Scanning {vector_dir} for vectors...")
             min_layer, max_layer = detect_layers_from_vectors(vector_dir, dry_run=args.dry_run)
-            print(f"  Layers: {min_layer}-{max_layer} (auto-detected)")
+            layer_str = f"{min_layer}-{max_layer}"
+            print(f"  Layers: {layer_str} (auto-detected)")
 
         # sbatch
         cmd, env_vars = build_sbatch_command(
             config=config,
             model_id=model_id,
             vector_dir_name=vector_dir_name,
-            min_layer=min_layer,
-            max_layer=max_layer,
+            layer_str=layer_str,
             project_root=project_root,
             python_bin=python_bin,
             user_email=user_email,

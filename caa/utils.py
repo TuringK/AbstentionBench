@@ -133,8 +133,31 @@ def load_yaml_config(path: str, schema_cls: type[BaseModel]) -> BaseModel:
         sys.exit(1)
 
 
+def parse_vector_indices(indices_args: list[str]) -> list[int]:
+    """Parse a list of index strings, supporting ranges like '1-5' and comma-separated '1,2,3'."""
+    indices = set()
+    for arg in indices_args:
+        # Split by comma first to allow "1,2,3" format as a single string
+        sub_args = [s.strip() for s in arg.split(',') if s.strip()]
+        for sub_arg in sub_args:
+            if '-' in sub_arg:
+                parts = sub_arg.split('-')
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    start, end = int(parts[0]), int(parts[1])
+                    indices.update(range(start, end + 1))
+                else:
+                    print(f"Error: Invalid layer range format: {sub_arg}", file=sys.stderr)
+                    sys.exit(1)
+            elif sub_arg.isdigit():
+                indices.add(int(sub_arg))
+            else:
+                print(f"Error: Invalid layer index: {sub_arg}", file=sys.stderr)
+                sys.exit(1)
+    return sorted(list(indices))
+
+
 def add_common_cli_args(parser) -> None:
-    """Add --dry-run and --model arguments common to all orchestrators."""
+    """Add --dry-run, --model, and --layers arguments common to all orchestrators."""
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -145,6 +168,14 @@ def add_common_cli_args(parser) -> None:
         type=str,
         default=None,
         help="Run only this model (must be a key in the config's models map)",
+    )
+    parser.add_argument(
+        "--layers",
+        type=str,
+        nargs="*",
+        default=None,
+        help="Run exactly these layers (overrides config auto-detection). "
+             "Accepts space/comma separated values or ranges (e.g. 1 3 5-10 or 1,3,5-10)",
     )
 
 
