@@ -41,9 +41,9 @@ Examples:
     # steering-specific args
     parser.add_argument(
         "--vector-indices",
-        type=int,
-        nargs="+",
-        help="List of vector indices to process (required for steering mode)."
+        type=str,
+        nargs="*",
+        help="List of vector indices or ranges (e.g., 1 2 5-10) to process. If not provided, will auto-detect from steering-dir."
     )
     
     # filtering options
@@ -93,11 +93,39 @@ Examples:
     
     args = parser.parse_args()
     
-    # validate steering mode requires vector indices
-    if args.steering_dir and not args.vector_indices:
-        parser.error("--vector-indices is required when using --steering-dir")
-    
     return args
+
+def parse_vector_indices(indices_args, steering_dir=None):
+    """
+    Parses a list of vector index strings, supporting ranges like '1-5'.
+    If no indices are provided, attempts to auto-detect integer subdirectories in steering_dir.
+    """
+    indices = set()
+    if not indices_args:
+        if steering_dir and os.path.exists(steering_dir):
+            for d in os.listdir(steering_dir):
+                if os.path.isdir(os.path.join(steering_dir, d)) and d.isdigit():
+                    indices.add(int(d))
+            if not indices:
+                print(f"Warning: No valid vector directories found in {steering_dir}")
+        return sorted(list(indices))
+
+    for arg in indices_args:
+        if isinstance(arg, int):
+            indices.add(arg)
+        elif isinstance(arg, str):
+            if '-' in arg:
+                parts = arg.split('-')
+                if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+                    start, end = int(parts[0]), int(parts[1])
+                    indices.update(range(start, end + 1))
+                else:
+                    raise ValueError(f"Invalid range format: {arg}")
+            elif arg.isdigit():
+                indices.add(int(arg))
+            else:
+                raise ValueError(f"Invalid vector index: {arg}")
+    return sorted(list(indices))
 
 
 def normalise_text(text):
@@ -412,9 +440,14 @@ if __name__ == "__main__":
     
     if args.steering_dir:
         # steering sweep mode
+        vector_indices_parsed = parse_vector_indices(args.vector_indices, args.steering_dir)
+        if not vector_indices_parsed:
+            print(f"Error: No vector indices provided and none found in {args.steering_dir}")
+            sys.exit(1)
+            
         results_df = process_steering_results(
             base_dir=args.steering_dir,
-            vector_indices=args.vector_indices,
+            vector_indices=vector_indices_parsed,
             filter_training=args.filter_training,
             training_data_path=args.training_data,
             excluded_datasets=args.exclude_datasets,
