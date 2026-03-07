@@ -28,13 +28,13 @@ class AbstentionF1ScoreTable:
             lambda x: pd.Series(
                 {
                     "precision": precision_score(
-                        x["prompt_should_abstain"], x["is_abstention"]
+                        x["prompt_should_abstain"], x["is_abstention"], zero_division=0.0
                     ),
                     "recall": recall_score(
-                        x["prompt_should_abstain"], x["is_abstention"]
+                        x["prompt_should_abstain"], x["is_abstention"], zero_division=0.0
                     ),
                     "f1_score": f1_score(
-                        x["prompt_should_abstain"], x["is_abstention"]
+                        x["prompt_should_abstain"], x["is_abstention"], zero_division=0.0
                     ),
                 }
             ),
