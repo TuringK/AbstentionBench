@@ -1,7 +1,11 @@
 import os
 import argparse
 import pandas as pd
-from analysis.load_results import Results
+import contextlib
+
+with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+    from analysis.load_results import Results
+    
 from analysis.tables import AbstentionF1ScoreTable
 
 
