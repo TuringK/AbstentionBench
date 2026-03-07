@@ -263,11 +263,26 @@ def process_results_dir(
     # manually find result paths to bypass JobManager if it fails to find files with empty sweep_dir
     final_file = "GroundTruthAbstentionEvaluator.json"
     result_path_names = []
+    missing_datasets = []
+    
     if os.path.exists(results_dir):
-        for root, dirs, files in os.walk(results_dir):
-            if final_file in files:
-                rel_path = os.path.relpath(root, results_dir)
-                result_path_names.append(rel_path)
+        for item in sorted(os.listdir(results_dir)):
+            item_path = os.path.join(results_dir, item)
+            if os.path.isdir(item_path):
+                found_final_file = False
+                for root, dirs, files in os.walk(item_path):
+                    if final_file in files:
+                        rel_path = os.path.relpath(root, results_dir)
+                        result_path_names.append(rel_path)
+                        found_final_file = True
+                
+                if not found_final_file:
+                    missing_datasets.append(item)
+                    
+    if missing_datasets:
+        print(f"WARNING: The following {len(missing_datasets)} datasets are missing {final_file}:")
+        for ds in missing_datasets:
+            print(f"  - {ds}")
 
     r = Results(
         base_results_dir=results_dir,
@@ -285,26 +300,28 @@ def process_results_dir(
     
     if excluded_datasets:
         mask = pd.Series(False, index=r.df.index)
-        if 'dataset_name' in r.df.columns:
-            mask |= r.df['dataset_name'].isin(excluded_datasets)
-        if 'dataset_name_formatted' in r.df.columns:
-            mask |= r.df['dataset_name_formatted'].isin(excluded_datasets)
+        for ds in excluded_datasets:
+            if 'dataset_name' in r.df.columns:
+                mask |= r.df['dataset_name'].str.contains(ds, case=False, na=False)
+            if 'dataset_name_formatted' in r.df.columns:
+                mask |= r.df['dataset_name_formatted'].str.contains(ds, case=False, na=False)
         
         if mask.any():
             initial_len_ds = len(r.df)
             r.df = r.df[~mask]
-            print(f"Filtered out {initial_len_ds - len(r.df)} rows belonging to datasets: {excluded_datasets}")
+            print(f"Filtered out {initial_len_ds - len(r.df)} rows belonging to datasets matching: {excluded_datasets}")
 
     if included_datasets:
         mask = pd.Series(False, index=r.df.index)
-        if 'dataset_name' in r.df.columns:
-            mask |= r.df['dataset_name'].isin(included_datasets)
-        if 'dataset_name_formatted' in r.df.columns:
-            mask |= r.df['dataset_name_formatted'].isin(included_datasets)
+        for ds in included_datasets:
+            if 'dataset_name' in r.df.columns:
+                mask |= r.df['dataset_name'].str.contains(ds, case=False, na=False)
+            if 'dataset_name_formatted' in r.df.columns:
+                mask |= r.df['dataset_name_formatted'].str.contains(ds, case=False, na=False)
         
         initial_len_ds = len(r.df)
         r.df = r.df[mask]
-        print(f"Kept only {len(r.df)} rows belonging to included datasets: {included_datasets} (filtered out {initial_len_ds - len(r.df)})")
+        print(f"Kept only {len(r.df)} rows belonging to included datasets matching: {included_datasets} (filtered out {initial_len_ds - len(r.df)})")
 
     # Stop if DataFrame is empty after filtering
     if r.df.empty:
