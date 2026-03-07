@@ -14,8 +14,11 @@ Examples:
   # Single results directory
   python results_analysis.py --results-dir data/results --output results.csv
 
-  # Steering sweep mode
-  python results_analysis.py --steering-dir data/vectors --vector-indices 10 11 12 --output sweep.xlsx
+  # Steering sweep mode (auto-detect vectors in steering-dir)
+  python results_analysis.py --steering-dir data/vectors --output sweep.xlsx
+
+  # Steering sweep mode (with ranges and individual vectors)
+  python results_analysis.py --steering-dir data/vectors --vector-indices 1 2 5-10 --output sweep.xlsx
 
   # Filter training data
   python results_analysis.py --results-dir data/results --filter-training --training-data data/sample_pairs.csv
