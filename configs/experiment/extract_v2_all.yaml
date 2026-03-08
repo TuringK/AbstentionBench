@@ -1,4 +1,7 @@
-name: extract_weighted_no_stale
+name: extract_v2_base
+
+# v2 extraction: fixed token boundary, bf16 model, float32 accumulation,
+# L2-normalized vectors, global mean aggregation (no scenario weighting).
 
 # model_id: hf_model_name
 models:
@@ -10,13 +13,15 @@ models:
   Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3-8B
 
 data_path: data/sample_pairs_with_scenario.csv
-output_base: data/vectors_weighted_no_stale
+output_base: data/vectors_v2_base
 
 extraction:
   use_system_prompt: true
-  weighted: true
-  exclude_scenarios: "stale"
-  # layers: auto-detected from HF model config. Or set explicitly, e.g. "11-23"
+  weighted: false
+  exclude_scenarios: ""
+  normalize: true
+  response_tokens: 10
+  # layers: auto-detected from HF model config (second half of network)
 
 slurm:
   partition: gpu

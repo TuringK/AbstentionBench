@@ -44,6 +44,8 @@ class ExtractionOptions(BaseModel):
     use_system_prompt: bool = True
     weighted: bool = False
     exclude_scenarios: str = ""
+    normalize: bool = False
+    response_tokens: int = 10
     layers: Optional[str] = None
 
 
@@ -94,6 +96,8 @@ def build_extraction_sbatch(
         f"EXT_USE_SYSTEM_PROMPT={'1' if config.extraction.use_system_prompt else '0'}",
         f"EXT_WEIGHTED={'1' if config.extraction.weighted else '0'}",
         f"EXT_EXCLUDE_SCENARIOS={config.extraction.exclude_scenarios}",
+        f"EXT_NORMALIZE={'1' if config.extraction.normalize else '0'}",
+        f"EXT_RESPONSE_TOKENS={config.extraction.response_tokens}",
     ]
 
     cmd = [
@@ -137,6 +141,7 @@ def run_local(
             "--data_path", data_path,
             "--output_path", output_file,
             "--layer_idx", str(layer_idx),
+            "--response_tokens", str(config.extraction.response_tokens),
         ]
 
         if config.extraction.use_system_prompt:
@@ -145,6 +150,8 @@ def run_local(
             cmd.append("--weighted")
         if config.extraction.exclude_scenarios:
             cmd.extend(["--exclude_scenarios", config.extraction.exclude_scenarios])
+        if config.extraction.normalize:
+            cmd.append("--normalize")
 
         if dry_run:
             print(f"  [DRY RUN] Layer {layer_idx}: {' '.join(cmd)}")

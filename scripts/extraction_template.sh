@@ -33,6 +33,12 @@ fi
 if [[ -n "${EXT_EXCLUDE_SCENARIOS}" ]]; then
     EXTRA_ARGS="${EXTRA_ARGS} --exclude_scenarios ${EXT_EXCLUDE_SCENARIOS}"
 fi
+if [[ "${EXT_NORMALIZE}" == "1" ]]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --normalize"
+fi
+if [[ -n "${EXT_RESPONSE_TOKENS}" ]]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --response_tokens ${EXT_RESPONSE_TOKENS}"
+fi
 
 "${EXT_PYTHON_BIN}" caa/extract_caa_vectors.py \
     --model_name "${EXT_MODEL_NAME}" \
