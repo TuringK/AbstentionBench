@@ -14,6 +14,9 @@ def extract_vectors(args):
     print(f"Loading model: {args.model_name}")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+    # FIX: use torch_dtype (not dtype) — the old keyword was silently ignored by
+    # Transformers, potentially loading the model in fp32.
+    # bf16 matches the native training dtype of Qwen 2.5, Gemma 3, and Llama 3.1.
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name, torch_dtype=torch.bfloat16, device_map="auto"
     )
@@ -87,6 +90,10 @@ def extract_vectors(args):
             "non_abstain": pair["non_abstain_response"],
         }
 
+        # FIX: tokenize the prompt via apply_chat_template(tokenize=True) to get
+        # exact token IDs. Previously we tokenized the prompt as a string and then
+        # re-tokenized prompt+response together — BPE merges can cross the
+        # concatenation boundary, shifting the response offset by 1-2 tokens.
         prompt_ids = question_to_chat_ids(
             use_system_prompt=args.use_system_prompt,
             question=question,
@@ -98,6 +105,9 @@ def extract_vectors(args):
         activations = {}
 
         for label, response in responses.items():
+            # FIX: tokenize the response separately (no special tokens) and
+            # concatenate IDs manually — this guarantees an exact prompt/response
+            # boundary, since we avoid re-tokenizing the full string.
             response_ids = tokenizer(
                 response,
                 add_special_tokens=False,
@@ -110,6 +120,8 @@ def extract_vectors(args):
             input_ids = torch.cat([prompt_ids, response_ids], dim=1)
             attention_mask = torch.ones_like(input_ids, device=device)
 
+            # FIX: inference_mode is slightly more efficient than no_grad and
+            # signals that we won't modify the outputs in-place.
             with torch.inference_mode():
                 outputs = model(
                     input_ids=input_ids,
@@ -117,6 +129,9 @@ def extract_vectors(args):
                     output_hidden_states=True,
                 )
 
+            # FIX: cast to float32 before averaging. The model runs in bf16,
+            # but accumulating many activations in reduced precision risks
+            # losing mantissa bits. This is cheap and eliminates the concern.
             hidden_state = outputs.hidden_states[args.layer_idx + 1].float()
 
             # extract only the response tokens (exclude prompt)
@@ -132,10 +147,14 @@ def extract_vectors(args):
             mean_act = response_acts[:, :slice_len, :].mean(dim=1).squeeze()
             activations[label] = mean_act
 
+        # FIX: skip pairs where either response produced no usable activations
+        # (e.g. empty response string). Previously this would KeyError.
         if "abstain" not in activations or "non_abstain" not in activations:
             continue
 
         diff = activations["abstain"] - activations["non_abstain"]
+        # FIX: move diff vectors to CPU to avoid accumulating thousands of
+        # GPU tensors in the list, which can cause OOM on large datasets.
         diff_vectors_by_scenario[scenario].append(diff.cpu())
 
     # aggregate
@@ -164,6 +183,11 @@ def extract_vectors(args):
         stacked_diffs = torch.stack(all_diffs)
         mean_steering_vector = stacked_diffs.mean(dim=0)
 
+    # FIX: L2-normalize the final vector so that alpha controls perturbation
+    # magnitude independent of layer-specific activation scale. Without this,
+    # alpha=1.0 at layer 12 vs layer 23 are not comparable interventions,
+    # and the layer sweep partly selects on vector magnitude rather than
+    # direction quality.
     raw_norm = mean_steering_vector.norm(p=2).item()
     print(f"Final vector L2 norm before normalization: {raw_norm:.6f}")
 
@@ -171,6 +195,7 @@ def extract_vectors(args):
         mean_steering_vector = mean_steering_vector / max(raw_norm, 1e-12)
         print("Applied L2 normalization to final steering vector.")
 
+    # ensure final saved tensor is always float32 regardless of accumulation path
     mean_steering_vector = mean_steering_vector.float()
 
     # save
@@ -187,6 +212,13 @@ def question_to_chat_ids(
     tokenizer: AutoTokenizer,
     device: torch.device,
 ) -> torch.Tensor:
+    """Return prompt token IDs (with chat template applied).
+
+    FIX: renamed from question_to_chat_format (which returned a string).
+    Now returns token IDs directly via apply_chat_template(tokenize=True),
+    so the caller can concatenate response IDs manually and get an exact
+    prompt/response boundary.
+    """
     if use_system_prompt:
         prompt: List[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT},
