@@ -1,0 +1,24 @@
+name: caa_coeff_sweep_test
+
+models:
+  qwen2_5_0_5B_instruct: Qwen2_5_0_5B_Instruct
+
+vector_dir: "data/vectors_weighted_test"
+datasets: "glob(*,exclude=dummy)"
+judge: contains_abstention_keyword
+single_job: true
+mode: local
+
+judge_label: Keywords_judge
+tag: coeff_sweep_test
+
+caa:
+  coeffs: [0.5, 1.0, 1.5]
+
+slurm:
+  partition: gpu
+  qos: gpu
+  gres: "gpu:1"
+  cpus_per_task: 8
+  mem: "82G"
+  time: "04:00:00"

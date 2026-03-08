@@ -21,7 +21,7 @@ Environment:
 import argparse
 import os
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
@@ -38,7 +38,7 @@ from caa.utils import (
 
 
 class CAAConfig(BaseModel):
-    coeff: float = 1.0
+    coeffs: list[float] = [1.0]
     layers: Optional[str] = None
 
 
@@ -74,13 +74,14 @@ def build_sbatch_command(
     project_root: str,
     python_bin: str,
     user_email: str,
+    current_coeff: float,
 ) -> tuple[list[str], dict[str, str]]:
     """Build the sbatch command for a single model."""
 
     vector_dir = f"{project_root}/{config.vector_dir}/{vector_dir_name}"
 
     # common_dir base path
-    coeff_str = str(config.caa.coeff).replace(".", "_")
+    coeff_str = str(current_coeff).replace(".", "_")
     tag_suffix = f"_{config.tag}" if config.tag else ""
     common_dir_name = (
         f"{vector_dir_name}_{config.judge_label}_CAA_coeff_{coeff_str}{tag_suffix}"
@@ -99,7 +100,7 @@ def build_sbatch_command(
         "EXP_JUDGE": str(config.judge),
         "EXP_SINGLE_JOB": str(config.single_job),
         "EXP_MODE": str(config.mode),
-        "EXP_COEFF": str(config.caa.coeff),
+        "EXP_COEFF": str(current_coeff),
         "EXP_PYTHON_BIN": str(python_bin),
         "EXP_USER_EMAIL": str(user_email),
     }
@@ -129,6 +130,11 @@ def main():
         "config",
         help="Path to experiment YAML config (e.g. configs/experiment/caa_all.yaml)",
     )
+    parser.add_argument(
+        "--force-4d",
+        action="store_true",
+        help="Bypass safety net to allow alpha sweeps across all auto-detected layers",
+    )
     add_common_cli_args(parser)
     args = parser.parse_args()
 
@@ -146,20 +152,25 @@ def main():
     # filter models
     models = filter_models(config.models, args.model)
 
+    coeffs_to_sweep = config.caa.coeffs
+
     for model_id, vector_dir_name in models.items():
         vector_dir = Path(project_root) / config.vector_dir / vector_dir_name
 
+        is_layer_explicit = False
         # resolve layer range or list
         if args.layers:
             layers_list = parse_vector_indices(args.layers)
             layer_str = ",".join(map(str, layers_list))
             print(f"Model: {model_id}")
             print(f"  Layers: {layer_str} (from CLI subset)")
+            is_layer_explicit = True
         elif config.caa.layers:
             layers_list = parse_vector_indices([config.caa.layers])
             layer_str = ",".join(map(str, layers_list))
             print(f"Model: {model_id}")
             print(f"  Layers: {layer_str} (from config)")
+            is_layer_explicit = True
         else:
             print(f"Model: {model_id}")
             print(f"  Scanning {vector_dir} for vectors...")
@@ -168,21 +179,31 @@ def main():
             )
             layer_str = f"{min_layer}-{max_layer}"
             print(f"  Layers: {layer_str} (auto-detected)")
+            is_layer_explicit = False
 
-        # sbatch
-        cmd, env_vars = build_sbatch_command(
-            config=config,
-            model_id=model_id,
-            vector_dir_name=vector_dir_name,
-            layer_str=layer_str,
-            project_root=project_root,
-            python_bin=python_bin,
-            user_email=user_email,
-        )
+        if len(coeffs_to_sweep) > 1 and not is_layer_explicit and not args.force_4d:
+            print(f"Error: Attempting to sweep {len(coeffs_to_sweep)} coeffs across all auto-detected layers for {model_id}.", file=sys.stderr)
+            print("This creates a 4D sweep which may generate too many jobs.", file=sys.stderr)
+            print("Safety net: Please either specify layers explicitly (in config or via --layers), or use the --force-4d flag.", file=sys.stderr)
+            sys.exit(1)
 
-        env = os.environ.copy()
-        env.update(env_vars)
-        submit_sbatch(cmd, dry_run=args.dry_run, env=env)
+        for current_coeff in coeffs_to_sweep:
+            print(f"  Coeff: {current_coeff}")
+            # sbatch
+            cmd, env_vars = build_sbatch_command(
+                config=config,
+                model_id=model_id,
+                vector_dir_name=vector_dir_name,
+                layer_str=layer_str,
+                project_root=project_root,
+                python_bin=python_bin,
+                user_email=user_email,
+                current_coeff=current_coeff,
+            )
+
+            env = os.environ.copy()
+            env.update(env_vars)
+            submit_sbatch(cmd, dry_run=args.dry_run, env=env)
 
     if args.dry_run:
         print("Dry run complete. No jobs were submitted.")
