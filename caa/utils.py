@@ -34,7 +34,7 @@ def get_env_var(name: str, dry_run: bool = False) -> str:
             print(f"  Warning: ${name} not set, using placeholder '{placeholder}'")
             return placeholder
         print(f"Error: ${name} is not set. Source env.sh first:", file=sys.stderr)
-        print(f"  source env.sh", file=sys.stderr)
+        print("  source env.sh", file=sys.stderr)
         sys.exit(1)
     return value
 
@@ -104,14 +104,14 @@ def parse_layer_range(layer_spec: str) -> tuple[int, int]:
 def submit_sbatch(cmd: list[str], dry_run: bool = False, env: dict | None = None) -> None:
     """Submit an sbatch command, or print it in dry-run mode."""
     if dry_run:
-        print(f"\n  [DRY RUN] Would execute:")
+        print("\n  [DRY RUN] Would execute:")
         if env:
             diff = {k: v for k, v in env.items() if os.environ.get(k) != v}
             print(f"    with environment variables: {diff}")
         print("    " + " \\\n      ".join(cmd))
         print()
     else:
-        print(f"  Submitting...")
+        print("  Submitting...")
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if result.returncode == 0:
             print(f"  [success] {result.stdout.strip()}")

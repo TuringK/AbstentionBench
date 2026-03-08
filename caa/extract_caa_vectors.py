@@ -38,8 +38,8 @@ def extract_vectors(args):
         if len(group) != 2:
             continue
             
-        abstain_row = group[group["did_abstain"] == True]
-        non_abstain_row = group[group["did_abstain"] == False]
+        abstain_row = group[group["did_abstain"]]
+        non_abstain_row = group[~group["did_abstain"]]
         
         if len(abstain_row) == 1 and len(non_abstain_row) == 1:
             scenario = str(abstain_row.iloc[0].get("scenario", "unknown")).strip()

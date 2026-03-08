@@ -20,7 +20,6 @@ Environment:
 
 import argparse
 import os
-import sys
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -33,7 +32,6 @@ from caa.utils import (
     filter_models,
     get_env_var,
     load_yaml_config,
-    parse_layer_range,
     submit_sbatch,
 )
 

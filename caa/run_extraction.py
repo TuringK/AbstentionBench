@@ -22,7 +22,6 @@ Environment:
 """
 
 import argparse
-import os
 import subprocess
 import sys
 from typing import Dict, Optional
@@ -194,7 +193,7 @@ def main():
         excl = config.extraction.exclude_scenarios or "(none)"
         print(f"Aggregation: scenario-weighted (excluding: {excl})")
     else:
-        print(f"Aggregation: naive (global mean)")
+        print("Aggregation: naive (global mean)")
     print()
 
     # filter models
@@ -208,7 +207,7 @@ def main():
             print(f"  Layers: {min_layer}-{max_layer} (from config)")
         else:
             print(f"Model: {model_id} ({hf_model_name})")
-            print(f"  Auto-detecting layer range from model config...")
+            print("  Auto-detecting layer range from model config...")
             min_layer, max_layer = detect_layers_from_model(
                 hf_model_name, dry_run=args.dry_run
             )
