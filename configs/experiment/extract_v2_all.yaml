@@ -1,4 +1,4 @@
-name: extract_v2_base
+name: extract_v2_all
 
 # v2 extraction: fixed token boundary, bf16 model, float32 accumulation,
 # L2-normalized vectors, global mean aggregation (no scenario weighting).
@@ -13,7 +13,7 @@ models:
   Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3-8B
 
 data_path: data/sample_pairs_with_scenario.csv
-output_base: data/vectors_v2_base
+output_base: data/vectors_v2
 
 extraction:
   use_system_prompt: true
@@ -24,7 +24,7 @@ extraction:
   # layers: auto-detected from HF model config (second half of network)
 
 slurm:
-  partition: gpu
+  partition: gpu,gpu-h100,gpu-h100-nvl
   qos: gpu
   gres: "gpu:1"
   cpus_per_task: 8
