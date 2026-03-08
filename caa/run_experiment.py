@@ -20,8 +20,9 @@ Environment:
 
 import argparse
 import os
+import sys
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 from pydantic import BaseModel, field_validator
 
