@@ -1,6 +1,7 @@
 import argparse
 import os
 from collections import defaultdict
+from typing import List
 
 import pandas as pd
 import torch
@@ -11,11 +12,13 @@ from recipe.system_prompt import SYSTEM_PROMPT
 
 def extract_vectors(args):
     print(f"Loading model: {args.model_name}")
+
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     model = AutoModelForCausalLM.from_pretrained(
-        args.model_name, dtype=torch.float16, device_map="auto"
+        args.model_name, torch_dtype=torch.bfloat16, device_map="auto"
     )
     model.eval()
+    device = next(model.parameters()).device
 
     print(f"Loading data from {args.data_path}")
     df = pd.read_csv(args.data_path)
@@ -79,50 +82,65 @@ def extract_vectors(args):
         question = pair["question"]
         scenario = pair["scenario"]
 
-        responses = [pair["abstain_response"], pair["non_abstain_response"]]
+        responses = {
+            "abstain": pair["abstain_response"],
+            "non_abstain": pair["non_abstain_response"],
+        }
 
-        # format inputs
-        prompt_str = question_to_chat_format(
+        prompt_ids = question_to_chat_ids(
             use_system_prompt=args.use_system_prompt,
             question=question,
             tokenizer=tokenizer,
-        )
-
-        # tokenize prompt separately to know where response starts
-        prompt_ids = tokenizer(prompt_str, return_tensors="pt").input_ids.to(
-            model.device
+            device=device,
         )
         prompt_len = prompt_ids.shape[1]
 
-        # run forward pass for both responses
         activations = {}
 
-        for i, response in enumerate(responses):
-            label = "abstain" if i == 0 else "non_abstain"
-            full_text = prompt_str + response
-            inputs = tokenizer(full_text, return_tensors="pt").to(model.device)
+        for label, response in responses.items():
+            response_ids = tokenizer(
+                response,
+                add_special_tokens=False,
+                return_tensors="pt",
+            ).input_ids.to(device)
 
-            with torch.no_grad():
-                outputs = model(inputs.input_ids, output_hidden_states=True)
+            if response_ids.shape[1] == 0:
+                continue
 
-            hidden_state = outputs.hidden_states[args.layer_idx + 1]
+            input_ids = torch.cat([prompt_ids, response_ids], dim=1)
+            attention_mask = torch.ones_like(input_ids, device=device)
+
+            with torch.inference_mode():
+                outputs = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_hidden_states=True,
+                )
+
+            hidden_state = outputs.hidden_states[args.layer_idx + 1].float()
 
             # extract only the response tokens (exclude prompt)
             response_acts = hidden_state[:, prompt_len:, :]
 
-            # use only the first 10 tokens, or the length of the response, whichever is shorter
+            # use only the first N tokens, or the length of the response, whichever is shorter
             num_tokens = response_acts.shape[1]
-            slice_len = min(num_tokens, 10)
+            slice_len = min(num_tokens, args.response_tokens)
+
+            if slice_len == 0:
+                continue
 
             mean_act = response_acts[:, :slice_len, :].mean(dim=1).squeeze()
-
             activations[label] = mean_act
 
+        if "abstain" not in activations or "non_abstain" not in activations:
+            continue
+
         diff = activations["abstain"] - activations["non_abstain"]
-        diff_vectors_by_scenario[scenario].append(diff)
+        diff_vectors_by_scenario[scenario].append(diff.cpu())
 
     # aggregate
     all_diffs = [d for diffs in diff_vectors_by_scenario.values() for d in diffs]
+
     if not all_diffs:
         print("No vectors extracted.")
         return
@@ -146,27 +164,42 @@ def extract_vectors(args):
         stacked_diffs = torch.stack(all_diffs)
         mean_steering_vector = stacked_diffs.mean(dim=0)
 
+    raw_norm = mean_steering_vector.norm(p=2).item()
+    print(f"Final vector L2 norm before normalization: {raw_norm:.6f}")
+
+    if args.normalize:
+        mean_steering_vector = mean_steering_vector / max(raw_norm, 1e-12)
+        print("Applied L2 normalization to final steering vector.")
+
+    mean_steering_vector = mean_steering_vector.float()
+
     # save
-    os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
+    out_dir = os.path.dirname(args.output_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
     torch.save(mean_steering_vector, args.output_path)
     print(f"Saved steering vector for layer {args.layer_idx} to {args.output_path}")
 
 
-def question_to_chat_format(
-    use_system_prompt: bool, question: str, tokenizer: AutoTokenizer
-) -> str:
-    # Tokenization and chat format inspired by the recipe
-    # from https://huggingface.co/neuralmagic/Meta-Llama-3.1-70B-Instruct-FP8
+def question_to_chat_ids(
+    use_system_prompt: bool,
+    question: str,
+    tokenizer: AutoTokenizer,
+    device: torch.device,
+) -> torch.Tensor:
     if use_system_prompt:
-        prompt = [
+        prompt: List[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": question},
         ]
     else:
         prompt = [{"role": "user", "content": question}]
     return tokenizer.apply_chat_template(
-        prompt, tokenize=False, add_generation_prompt=True
-    )
+        prompt,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors="pt",
+    ).to(device)
 
 
 if __name__ == "__main__":
@@ -197,6 +230,17 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Comma-separated scenarios to exclude, e.g. 'stale,subjective'",
+    )
+    parser.add_argument(
+        "--response_tokens",
+        type=int,
+        default=10,
+        help="Number of response tokens to average over",
+    )
+    parser.add_argument(
+        "--normalize",
+        action="store_true",
+        help="L2-normalize final steering vector before saving",
     )
 
     args = parser.parse_args()
