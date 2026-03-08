@@ -32,6 +32,7 @@ from caa.utils import (
     filter_models,
     get_env_var,
     load_yaml_config,
+    parse_vector_indices,
     submit_sbatch,
 )
 
@@ -81,7 +82,9 @@ def build_sbatch_command(
     # common_dir base path
     coeff_str = str(config.caa.coeff).replace(".", "_")
     tag_suffix = f"_{config.tag}" if config.tag else ""
-    common_dir_name = f"{vector_dir_name}_{config.judge_label}_CAA_coeff_{coeff_str}{tag_suffix}"
+    common_dir_name = (
+        f"{vector_dir_name}_{config.judge_label}_CAA_coeff_{coeff_str}{tag_suffix}"
+    )
     common_dir_base = f"{project_root}/data/{common_dir_name}"
 
     job_name = f"caa_{model_id}"
@@ -143,8 +146,6 @@ def main():
     # filter models
     models = filter_models(config.models, args.model)
 
-    from caa.utils import parse_vector_indices
-
     for model_id, vector_dir_name in models.items():
         vector_dir = Path(project_root) / config.vector_dir / vector_dir_name
 
@@ -162,7 +163,9 @@ def main():
         else:
             print(f"Model: {model_id}")
             print(f"  Scanning {vector_dir} for vectors...")
-            min_layer, max_layer = detect_layers_from_vectors(vector_dir, dry_run=args.dry_run)
+            min_layer, max_layer = detect_layers_from_vectors(
+                vector_dir, dry_run=args.dry_run
+            )
             layer_str = f"{min_layer}-{max_layer}"
             print(f"  Layers: {layer_str} (auto-detected)")
 

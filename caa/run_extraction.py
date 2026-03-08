@@ -49,7 +49,7 @@ class ExtractionOptions(BaseModel):
 
 class ExtractionConfig(BaseModel):
     name: str
-    models: Dict[str, str]   # model_id -> HF model name
+    models: Dict[str, str]  # model_id -> HF model name
     data_path: str = "data/sample_pairs_with_scenario.csv"
     output_base: str = "data/vectors"
     extraction: ExtractionOptions = ExtractionOptions()
@@ -155,8 +155,10 @@ def run_local(
 
         result = subprocess.run(cmd)
         if result.returncode != 0:
-            print(f"Extraction failed for layer {layer_idx} (exit {result.returncode})",
-                  file=sys.stderr)
+            print(
+                f"Extraction failed for layer {layer_idx} (exit {result.returncode})",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     if not dry_run:

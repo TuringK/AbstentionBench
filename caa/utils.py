@@ -24,6 +24,7 @@ class SlurmConfig(BaseModel):
     mem: str = "82G"
     time: str = "04:00:00"
 
+
 def get_env_var(name: str, dry_run: bool = False) -> str:
     """Get a required environment variable (from env.sh).
     In dry-run mode, returns a placeholder instead of crashing."""
@@ -33,21 +34,28 @@ def get_env_var(name: str, dry_run: bool = False) -> str:
             placeholder = f"<{name}>"
             print(f"  Warning: ${name} not set, using placeholder '{placeholder}'")
             return placeholder
+
         print(f"Error: ${name} is not set. Source env.sh first:", file=sys.stderr)
         print("  source env.sh", file=sys.stderr)
         sys.exit(1)
+
     return value
 
 
-def detect_layers_from_vectors(vector_dir: Path, dry_run: bool = False) -> tuple[int, int]:
+def detect_layers_from_vectors(
+    vector_dir: Path, dry_run: bool = False
+) -> tuple[int, int]:
     """
     Scan vector_dir for vec_layer_N.pt files and return (min_layer, max_layer).
     In dry-run mode, returns a placeholder range if the directory doesn't exist.
     """
     if not vector_dir.is_dir():
         if dry_run:
-            print(f"  Warning: Vector dir not found ({vector_dir}), using placeholder range 0-31")
+            print(
+                f"  Warning: Vector dir not found ({vector_dir}), using placeholder range 0-31"
+            )
             return 0, 31
+
         print(f"Error: Vector directory not found: {vector_dir}", file=sys.stderr)
         sys.exit(1)
 
@@ -55,13 +63,17 @@ def detect_layers_from_vectors(vector_dir: Path, dry_run: bool = False) -> tuple
     layers = []
     for f in vector_dir.iterdir():
         m = pattern.match(f.name)
+
         if m:
             layers.append(int(m.group(1)))
 
     if not layers:
         if dry_run:
-            print(f"  Warning: No vec_layer_*.pt files in {vector_dir}, using placeholder range 0-31")
+            print(
+                f"  Warning: No vec_layer_*.pt files in {vector_dir}, using placeholder range 0-31"
+            )
             return 0, 31
+
         print(f"Error: No vec_layer_*.pt files in {vector_dir}", file=sys.stderr)
         sys.exit(1)
 
@@ -78,6 +90,7 @@ def detect_layers_from_model(model_name: str, dry_run: bool = False) -> tuple[in
     """
     try:
         from transformers import AutoConfig
+
         config = AutoConfig.from_pretrained(model_name, trust_remote_code=True)
         num_layers = config.num_hidden_layers
         min_layer = num_layers // 2 - 1
@@ -85,9 +98,12 @@ def detect_layers_from_model(model_name: str, dry_run: bool = False) -> tuple[in
         return min_layer, max_layer
     except Exception as e:
         if dry_run:
-            print(f"  Warning: Could not load config for {model_name} ({e}), "
-                  f"using placeholder range 11-23")
+            print(
+                f"  Warning: Could not load config for {model_name} ({e}), "
+                f"using placeholder range 11-23"
+            )
             return 11, 23
+
         print(f"Error: Could not detect layers for {model_name}: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -96,18 +112,25 @@ def parse_layer_range(layer_spec: str) -> tuple[int, int]:
     """Parse explicit layer spec like '15-31'."""
     parts = layer_spec.split("-")
     if len(parts) != 2:
-        print(f"Error: Invalid layer range '{layer_spec}'. Expected 'MIN-MAX'.", file=sys.stderr)
+        print(
+            f"Error: Invalid layer range '{layer_spec}'. Expected 'MIN-MAX'.",
+            file=sys.stderr,
+        )
         sys.exit(1)
+
     return int(parts[0]), int(parts[1])
 
 
-def submit_sbatch(cmd: list[str], dry_run: bool = False, env: dict | None = None) -> None:
+def submit_sbatch(
+    cmd: list[str], dry_run: bool = False, env: dict | None = None
+) -> None:
     """Submit an sbatch command, or print it in dry-run mode."""
     if dry_run:
         print("\n  [DRY RUN] Would execute:")
         if env:
             diff = {k: v for k, v in env.items() if os.environ.get(k) != v}
             print(f"    with environment variables: {diff}")
+
         print("    " + " \\\n      ".join(cmd))
         print()
     else:
@@ -116,7 +139,9 @@ def submit_sbatch(cmd: list[str], dry_run: bool = False, env: dict | None = None
         if result.returncode == 0:
             print(f"  [success] {result.stdout.strip()}")
         else:
-            print(f"  [error] sbatch failed (exit {result.returncode}):", file=sys.stderr)
+            print(
+                f"  [error] sbatch failed (exit {result.returncode}):", file=sys.stderr
+            )
             print(f"    {result.stderr.strip()}", file=sys.stderr)
             sys.exit(1)
         print()
@@ -138,21 +163,26 @@ def parse_vector_indices(indices_args: list[str]) -> list[int]:
     indices = set()
     for arg in indices_args:
         # Split by comma first to allow "1,2,3" format as a single string
-        sub_args = [s.strip() for s in arg.split(',') if s.strip()]
+        sub_args = [s.strip() for s in arg.split(",") if s.strip()]
+
         for sub_arg in sub_args:
-            if '-' in sub_arg:
-                parts = sub_arg.split('-')
+            if "-" in sub_arg:
+                parts = sub_arg.split("-")
+
                 if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
                     start, end = int(parts[0]), int(parts[1])
                     indices.update(range(start, end + 1))
                 else:
-                    print(f"Error: Invalid layer range format: {sub_arg}", file=sys.stderr)
+                    print(
+                        f"Error: Invalid layer range format: {sub_arg}", file=sys.stderr
+                    )
                     sys.exit(1)
             elif sub_arg.isdigit():
                 indices.add(int(sub_arg))
             else:
                 print(f"Error: Invalid layer index: {sub_arg}", file=sys.stderr)
                 sys.exit(1)
+
     return sorted(list(indices))
 
 
@@ -175,7 +205,7 @@ def add_common_cli_args(parser) -> None:
         nargs="*",
         default=None,
         help="Run exactly these layers (overrides config auto-detection). "
-             "Accepts space/comma separated values or ranges (e.g. 1 3 5-10 or 1,3,5-10)",
+        "Accepts space/comma separated values or ranges (e.g. 1 3 5-10 or 1,3,5-10)",
     )
 
 
@@ -183,6 +213,7 @@ def filter_models(models: dict, model_key: Optional[str]) -> dict:
     """Filter model dict to a single model if --model is specified."""
     if model_key is None:
         return models
+
     if model_key not in models:
         available = ", ".join(models.keys())
         print(
@@ -190,4 +221,5 @@ def filter_models(models: dict, model_key: Optional[str]) -> dict:
             file=sys.stderr,
         )
         sys.exit(1)
+
     return {model_key: models[model_key]}
