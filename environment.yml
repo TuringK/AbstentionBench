@@ -26,6 +26,7 @@ dependencies:
   - altair
   - ipywidgets
   - fire
+  - sentence-transformers
   - pip:
       - openai
       - GitPython
