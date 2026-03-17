@@ -36,6 +36,7 @@ MODELS_WITHOUT_GPU = ["DummyModel", "GPT4oAPI", "o1API", "Gemini15ProAPI"]
 LLM_JUDGES_WITHOUT_GPU = [
     "ContainsAbstentionKeyword",
     "LLMJudgeGPT4o",
+    "DecayCPFSim"
 ]
 
 
