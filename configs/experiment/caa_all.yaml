@@ -21,7 +21,7 @@ judge_label: Keywords_judge
 tag: all_datasets
 
 caa:
-  coeff: 1.0
+  coeffs: [1.0]
   # layers: auto-detected from vector files. Or set explicitly, e.g. "15-31"
 
 slurm:

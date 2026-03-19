@@ -16,6 +16,8 @@ extraction:
   use_system_prompt: true
   weighted: false
   exclude_scenarios: ""
+  normalize: false
+  response_tokens: 10
   # layers: auto-detected from HF model config. Or set explicitly, e.g. "11-23"
 
 slurm:
