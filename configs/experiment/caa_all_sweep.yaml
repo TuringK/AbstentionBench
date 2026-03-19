@@ -1,0 +1,33 @@
+name: caa_all_sweep
+
+# model_id: vector_directory_name
+models:
+  qwen2_5_0_5B_instruct: Qwen2_5_0_5B_Instruct
+  # qwen2_5_1_5B_instruct: Qwen2_5_1_5B_Instruct
+  # qwen2_5_3B_instruct: Qwen2_5_3B_Instruct
+  qwen2_5_7B_instruct: Qwen2_5_7B_Instruct
+  # gemma_3_1B_instruct: Gemma3_1B_Instruct
+  # allenai_llama_3_1_tulu_3_1_8B: Llama3_1_Tulu_3_1_8B
+
+vector_dir: "data/vectors"
+datasets: "glob(*,exclude=dummy)"
+judge: contains_abstention_keyword
+single_job: true
+mode: local
+
+# output directory name pattern: {vector_dir}_{judge_label}_CAA_coeff_{coeff}_{tag}
+# e.g. Llama3_1_Tulu_3_1_8B_Keywords_judge_CAA_coeff_1_0_rulebreakers
+judge_label: Keywords_judge
+tag: all_sweep
+
+caa:
+  coeff: [0.5, 2.0, 4.0, 8.0, 16.0]
+  # layers: auto-detected from vector files. Or set explicitly, e.g. "15-31"
+
+slurm:
+  partition: gpu,gpu-h100,gpu-h100-nvl
+  qos: gpu
+  gres: "gpu:1"
+  cpus_per_task: 8
+  mem: "82G"
+  time: "04:00:00"
