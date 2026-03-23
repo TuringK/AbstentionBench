@@ -1,4 +1,4 @@
-name: caa_all
+name: caa_all_sweep
 
 # model_id: vector_directory_name
 models:
@@ -18,10 +18,10 @@ mode: local
 # output directory name pattern: {vector_dir}_{judge_label}_CAA_coeff_{coeff}_{tag}
 # e.g. Llama3_1_Tulu_3_1_8B_Keywords_judge_CAA_coeff_1_0_rulebreakers
 judge_label: Keywords_judge
-tag: all_datasets
+tag: all_datasets_sweep
 
 caa:
-  coeffs: [1.0]
+  coeffs: [2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
   # layers: auto-detected from vector files. Or set explicitly, e.g. "15-31"
 
 slurm:

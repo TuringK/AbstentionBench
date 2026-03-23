@@ -1,24 +1,23 @@
-name: caa_all
+name: caa_v2_all_sweep
 
-# model_id: vector_directory_name
+# model_id: vector_directory_name (must match dirs under vector_dir)
 models:
   qwen2_5_0_5B_instruct: Qwen2_5_0_5B_Instruct
-  qwen2_5_1_5B_instruct: Qwen2_5_1_5B_Instruct
-  qwen2_5_3B_instruct: Qwen2_5_3B_Instruct
+  # qwen2_5_1_5B_instruct: Qwen2_5_1_5B_Instruct
+  # qwen2_5_3B_instruct: Qwen2_5_3B_Instruct
   qwen2_5_7B_instruct: Qwen2_5_7B_Instruct
-  gemma_3_1B_instruct: Gemma3_1B_Instruct
-  allenai_llama_3_1_tulu_3_1_8B: Llama3_1_Tulu_3_1_8B
+  # gemma_3_1B_instruct: Gemma3_1B_Instruct
+  # allenai_llama_3_1_tulu_3_1_8B: Llama3_1_Tulu_3_1_8B
 
-vector_dir: "data/vectors"
+vector_dir: "data/vectors_v2"
 datasets: "glob(*,exclude=dummy)"
 judge: contains_abstention_keyword
 single_job: true
 mode: local
 
 # output directory name pattern: {vector_dir}_{judge_label}_CAA_coeff_{coeff}_{tag}
-# e.g. Llama3_1_Tulu_3_1_8B_Keywords_judge_CAA_coeff_1_0_rulebreakers
 judge_label: Keywords_judge
-tag: all_datasets
+tag: v2_all_datasets_qwen_sweep
 
 caa:
   coeffs: [1.0]

@@ -21,7 +21,7 @@ extraction:
   # layers: auto-detected from HF model config. Or set explicitly, e.g. "11-23"
 
 slurm:
-  partition: gpu
+  partition: gpu,gpu-h100,gpu-h100-nvl
   qos: gpu
   gres: "gpu:1"
   cpus_per_task: 8
