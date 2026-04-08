@@ -1,0 +1,65 @@
+[project]
+name = "turing-abstention-bench"
+version = "0.1.0"
+description = "Turing Project's fork of AbstentionBench"
+requires-python = "==3.11.*"
+dependencies = [
+    # General python dependencies
+    "pytest",
+    "loguru",
+    "pydantic",
+    "scikit-learn",
+    "tqdm",
+    "accelerate",
+    "submitit",
+    "hydra-core",
+    "hydra-submitit-launcher",
+    "datasets",
+    "transformers",
+    "requests",
+    "pypdf2",
+    "jsonlines",
+    "ipykernel",
+    "tabulate",
+    "altair",
+    "ipywidgets",
+    "fire",
+    "openai",
+    "gitpython",
+    "gdown",
+    "google-generativeai",
+    "plotly",
+    "kaleido",
+    "wget",
+    "tiktoken",
+    "sentencepiece",
+    # Core Torch
+    "torch==2.6.0",
+    # We restrict vllm and xformers to Linux
+    "xformers==0.0.29.post2 ; sys_platform == 'linux'",
+    "vllm==0.8.5.post1 ; sys_platform == 'linux'",
+    "matplotlib>=3.10.8",
+    "seaborn>=0.13.2",
+    "jupyter>=1.1.1",
+]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+exclude = ["tests*"]
+
+# Instruct uv that this is a project workspace it should install it in editable mode 
+[tool.uv]
+package = true
+
+# This mimics 'setup.sh' logic by pushing Linux to use CUDA
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
+xformers = [{ index = "pytorch-cu124", marker = "sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
