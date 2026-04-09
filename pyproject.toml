@@ -9,7 +9,7 @@ dependencies = [
     "loguru",
     "pydantic",
     "scikit-learn",
-    "tqdm",
+    "tqdm>=4.66",
     "accelerate",
     "submitit",
     "hydra-core",
