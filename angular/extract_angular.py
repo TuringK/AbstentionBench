@@ -54,6 +54,7 @@ import gc
 import json
 import os
 import re
+from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -76,13 +77,30 @@ U2_ALIGNMENT_THRESHOLD = 0.10
 
 # data loading
 
+
 def load_abstention_dataset(
     path: str,
     max_samples: Optional[int] = None,
     exclude_tasks: Optional[set] = None,
     seed: int = 42,
+    dedupe: bool = True,
+    stratified: bool = False,
 ) -> Tuple[List[str], List[str]]:
     """Load and partition prompts by `should_abstain`.
+
+    Parameters
+    ----------
+    dedupe : bool
+        Deduplicate by (question, should_abstain) before subsampling.
+        The dataset contains multiple (positive, negative) response pairs per
+        question, but extraction only uses the question text.  Without dedup,
+        identical prompts are counted multiple times, wasting compute and
+        corrupting subsampled distributions.
+
+    stratified : bool
+        If True and max_samples is set, subsample proportionally by task type
+        instead of uniformly at random.  Useful when the task distribution is
+        very skewed (e.g. ``underspecified context`` dominates).
 
     Returns
     -------
@@ -97,29 +115,90 @@ def load_abstention_dataset(
         data = [d for d in data if d["task"] not in exclude_tasks]
         print(f"Excluded tasks {exclude_tasks}: {before} -> {len(data)} entries")
 
-    abstain_prompts = [d["question"] for d in data if d["should_abstain"]]
-    answer_prompts = [d["question"] for d in data if not d["should_abstain"]]
+    # deduplicate by (question, should_abstain) — each unique prompt appears
+    # multiple times in the dataset due to paired positive/negative responses
+    if dedupe:
+        seen: set = set()
+        deduped: list = []
+        for d in data:
+            key = (d["question"].strip(), bool(d["should_abstain"]))
+            if key not in seen:
+                seen.add(key)
+                deduped.append(d)
+
+        print(f"Deduped prompt-label pairs: {len(data)} -> {len(deduped)}")
+        data = deduped
+
+    abstain_data = [d for d in data if d["should_abstain"]]
+    answer_data = [d for d in data if not d["should_abstain"]]
 
     print(
-        f"Dataset: {len(abstain_prompts)} should-abstain, "
-        f"{len(answer_prompts)} should-answer prompts"
+        f"Dataset: {len(abstain_data)} should-abstain, "
+        f"{len(answer_data)} should-answer prompts"
     )
+
+    # log per-task counts by class
+    for label, subset in [("abstain", abstain_data), ("answer", answer_data)]:
+        task_counts = Counter(d["task"] for d in subset)
+        print(f"  {label} task distribution:")
+        for task, count in sorted(task_counts.items(), key=lambda x: -x[1]):
+            print(f"    {task:30s} {count:5d}")
 
     # sub-sample if requested (deterministic)
     if max_samples is not None:
         rng = np.random.default_rng(seed)
-        if len(abstain_prompts) > max_samples:
-            idx = rng.choice(len(abstain_prompts), max_samples, replace=False)
-            abstain_prompts = [abstain_prompts[i] for i in sorted(idx)]
-        if len(answer_prompts) > max_samples:
-            idx = rng.choice(len(answer_prompts), max_samples, replace=False)
-            answer_prompts = [answer_prompts[i] for i in sorted(idx)]
-        print(
-            f"Sub-sampled to {len(abstain_prompts)} abstain, "
-            f"{len(answer_prompts)} answer prompts"
+        abstain_data = _subsample(
+            abstain_data, max_samples, rng, stratified=stratified, label="abstain"
         )
 
+        answer_data = _subsample(
+            answer_data, max_samples, rng, stratified=stratified, label="answer"
+        )
+
+    abstain_prompts = [d["question"] for d in abstain_data]
+    answer_prompts = [d["question"] for d in answer_data]
+
     return abstain_prompts, answer_prompts
+
+
+def _subsample(
+    data: List[dict],
+    max_samples: int,
+    rng: np.random.Generator,
+    stratified: bool = False,
+    label: str = "",
+) -> List[dict]:
+    """Subsample a list of dataset entries, optionally stratified by task."""
+    if len(data) <= max_samples:
+        return data
+
+    if not stratified:
+        idx = rng.choice(len(data), max_samples, replace=False)
+        result = [data[i] for i in sorted(idx)]
+    else:
+        # stratified: sample proportionally by task
+        by_task: Dict[str, list] = {}
+        for d in data:
+            by_task.setdefault(d["task"], []).append(d)
+
+        result = []
+        total = len(data)
+        for task, entries in sorted(by_task.items()):
+            n_task = max(1, round(max_samples * len(entries) / total))
+            n_task = min(n_task, len(entries))
+            idx = rng.choice(len(entries), n_task, replace=False)
+            result.extend(entries[i] for i in sorted(idx))
+
+        # trim if rounding produced too many
+        if len(result) > max_samples:
+            idx = rng.choice(len(result), max_samples, replace=False)
+            result = [result[i] for i in sorted(idx)]
+
+    print(
+        f"  Sub-sampled {label}: {len(data)} -> {len(result)} prompts"
+        + (" (stratified)" if stratified else "")
+    )
+    return result
 
 
 # template suffix detection
@@ -139,6 +218,7 @@ def get_template_suffix_tokens(
     -------
     suffix_token_strs : list[str]
         Human-readable token strings (for logging).
+
     num_suffix_tokens : int
         Number of suffix tokens.  At least 1 (we always use the last token).
     """
@@ -151,13 +231,18 @@ def get_template_suffix_tokens(
             ]
         else:
             msgs = [{"role": "user", "content": text}]
-        chat_str = tokenizer.apply_chat_template(
+        # Use tokenize=True for a single-pass tokenization that preserves
+        # exact token boundaries (consistent with the CAA script).
+        ids = tokenizer.apply_chat_template(
             msgs,
-            tokenize=False,
+            tokenize=True,
             add_generation_prompt=True,
+            return_tensors="pt",
         )
-        ids = tokenizer.encode(chat_str, add_special_tokens=False)
-        return torch.tensor(ids, dtype=torch.long)
+        # apply_chat_template may return BatchEncoding or raw tensor
+        if hasattr(ids, "input_ids"):
+            ids = ids.input_ids
+        return ids.squeeze(0)
 
     toks_a = _tokenize("a")
     toks_b = _tokenize("b")
@@ -187,12 +272,20 @@ def get_template_suffix_tokens(
 # prompt tokenization
 
 
-def prompts_to_chat_tokens(
+def prompts_to_chat_batch(
     tokenizer: AutoTokenizer,
     prompts: List[str],
     use_system_prompt: bool,
-) -> torch.Tensor:
-    """Tokenize a list of prompts with the chat template, left-padded."""
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Tokenize a list of prompts with the chat template, left-padded.
+
+    Returns
+    -------
+    input_ids : Tensor of shape (batch, seq_len)
+
+    attention_mask : Tensor of shape (batch, seq_len)
+        0 for padding tokens, 1 for real tokens.
+    """
     conversations = []
     for p in prompts:
         if use_system_prompt:
@@ -212,10 +305,16 @@ def prompts_to_chat_tokens(
         add_generation_prompt=True,
         return_tensors="pt",
     )
-    # newer transformers returns BatchEncoding; extract the tensor
+    # transformers >=4.x returns BatchEncoding with input_ids + attention_mask
     if hasattr(result, "input_ids"):
-        return result.input_ids
-    return result
+        input_ids = result.input_ids
+        attention_mask = result.attention_mask
+    else:
+        # fallback: raw tensor (older transformers) — construct mask manually
+        input_ids = result
+        attention_mask = (input_ids != tokenizer.pad_token_id).long()
+
+    return input_ids, attention_mask
 
 
 # activation extraction
@@ -303,9 +402,11 @@ def extract_activations(
     ):
         batch_prompts = prompts[batch_start : batch_start + batch_size]
 
-        input_ids = prompts_to_chat_tokens(
+        input_ids, attention_mask = prompts_to_chat_batch(
             tokenizer, batch_prompts, use_system_prompt
-        ).to(device)
+        )
+        input_ids = input_ids.to(device)
+        attention_mask = attention_mask.to(device)
 
         # register hooks for resid_mid
         resid_mid_cache: Dict[int, torch.Tensor] = {}
@@ -331,7 +432,7 @@ def extract_activations(
         with torch.inference_mode():
             outputs = model(
                 input_ids=input_ids,
-                attention_mask=torch.ones_like(input_ids),
+                attention_mask=attention_mask,
                 output_hidden_states=True,
             )
 
@@ -368,10 +469,8 @@ def extract_activations(
         total_samples += actual_batch
 
         # free GPU memory
-        del outputs, resid_mid_cache, input_ids
+        del outputs, resid_mid_cache, input_ids, attention_mask
         gc.collect()
-        if device.type == "cuda":
-            torch.cuda.empty_cache()
 
     # compute population mean
     result = {}
@@ -401,8 +500,10 @@ def compute_candidates(
     -------
     candidates : dict
         Key `"(layer, site)"` -> unit-norm direction tensor.
+
     raw_norms : dict
         Pre-normalisation L2 norms (useful for diagnostics).
+
     viable_keys : list
         Keys with raw norm above `norm_floor`.
     """
@@ -441,15 +542,11 @@ def compute_candidates(
 def select_u1(
     candidates: Dict[str, torch.Tensor],
     viable_keys: List[str],
-    metric: str = "mean_cosine",
 ) -> Tuple[str, torch.Tensor, torch.Tensor]:
     """Select the best refusal direction u1.
 
-    Parameters
-    ----------
-    metric : str
-        `"mean_cosine"` - highest mean cosine with all other viable candidates.
-        `"norm"` - highest raw direction norm (before unit normalisation).
+    Uses mean cosine similarity: the candidate with the highest mean cosine
+    with all other viable candidates is selected as u1.
     """
     if not viable_keys:
         raise ValueError(
@@ -460,31 +557,23 @@ def select_u1(
     if len(viable_keys) == 1:
         key = viable_keys[0]
         print(f"Only one viable candidate - selected u1 = {key}")
-        return key, candidates[key]
+        cos_matrix = torch.ones(1, 1)
+        return key, candidates[key], cos_matrix
 
     # build cosine matrix between viable candidates
     vecs = torch.stack([candidates[k] for k in viable_keys])  # (N, D)
     cos_matrix = vecs @ vecs.T  # (N, N)
 
-    if metric == "mean_cosine":
-        # mean cosine with all OTHER candidates
-        n = len(viable_keys)
-        # zero out the diagonal (self-similarity = 1)
-        mask = 1 - torch.eye(n)
-        masked = cos_matrix * mask
-        mean_cos = masked.sum(dim=1) / (n - 1)
-        best_idx = mean_cos.argmax().item()
-    elif metric == "norm":
-        # already unit-normalised, but we use position in viable_keys
-        # as a proxy - caller should pass raw_norms for a proper norm metric
-        # for simplicity, fall back to mean_cosine
-        mean_cos = (cos_matrix * (1 - torch.eye(len(viable_keys)))).sum(dim=1)
-        best_idx = mean_cos.argmax().item()
-    else:
-        raise ValueError(f"Unknown selection metric: {metric}")
+    # mean cosine with all OTHER candidates
+    n = len(viable_keys)
+    # zero out the diagonal (self-similarity = 1)
+    mask = 1 - torch.eye(n)
+    masked = cos_matrix * mask
+    mean_cos = masked.sum(dim=1) / (n - 1)
+    best_idx = mean_cos.argmax().item()
 
     u1_key = viable_keys[best_idx]
-    print(f"Selected u1 = {u1_key} (metric={metric})")
+    print(f"Selected u1 = {u1_key} (metric=mean_cosine)")
     return u1_key, candidates[u1_key], cos_matrix
 
 
@@ -563,16 +652,24 @@ def build_notebook_steering_config(
 ) -> dict:
     """Build a steering config dict in the Angular notebook's format.
 
-    Keys are module names like `model.layers.{idx}.post_attention_layernorm`.
-    Each value contains `first_direction`, `second_direction`, `mode`.
+    Keys are module names like ``model.layers.{idx}.post_attention_layernorm``.
+    Each value contains ``first_direction``, ``second_direction``, ``mode``.
+
+    Module targeting follows the notebook convention:
+    - Non-Gemma: ``input_layernorm`` + ``post_attention_layernorm``
+    - Gemma: ``post_attention_layernorm`` + ``post_feedforward_layernorm``
+
+    ``input_layernorm`` at layer *i+1* is equivalent to ``resid_post`` at
+    layer *i*, so for the last layer it is skipped.
     """
-    # detect layernorm module names
-    layernorm_modules = ["post_attention_layernorm"]
+    # detect layernorm module names — match the notebook's convention
     if "gemma" in model_name.lower():
         layernorm_modules = [
             "post_attention_layernorm",
             "post_feedforward_layernorm",
         ]
+    else:
+        layernorm_modules = ["input_layernorm", "post_attention_layernorm"]
 
     u1_np = u1.numpy()
     u2_np = u2.numpy()
@@ -580,8 +677,12 @@ def build_notebook_steering_config(
     config = {}
     for layer_idx in range(num_layers):
         for module in layernorm_modules:
-            if module == "input_layernorm" and layer_idx < num_layers - 1:
-                module_name = f"model.layers.{layer_idx + 1}.{module}"
+            # input_layernorm at layer i+1 is resid_post at layer i
+            if module == "input_layernorm":
+                if layer_idx < num_layers - 1:
+                    module_name = f"model.layers.{layer_idx + 1}.{module}"
+                else:
+                    continue  # skip — no next layer
             else:
                 module_name = f"model.layers.{layer_idx}.{module}"
 
@@ -622,6 +723,8 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         max_samples=args.max_samples,
         exclude_tasks=exclude_tasks,
         seed=args.seed,
+        dedupe=args.dedupe,
+        stratified=args.stratified,
     )
 
     # load model
@@ -636,14 +739,21 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         else:
             raise ValueError("No pad_token or eos_token in tokenizer")
 
+    # choose dtype by device capability
+    if device.type == "cuda":
+        model_dtype = torch.bfloat16
+    elif device.type == "mps":
+        model_dtype = torch.float16
+    else:
+        model_dtype = torch.float32
+
     model = AutoModelForCausalLM.from_pretrained(
         args.model_name,
-        dtype=torch.bfloat16,
-        device_map=device if device.type != "mps" else "auto",
+        dtype=model_dtype,
     )
+    model.to(device)
     model.eval()
-    actual_device = next(model.parameters()).device
-    print(f"Model loaded on {actual_device}")
+    print(f"Model loaded on {device} (dtype={model_dtype})")
 
     # template suffix detection
     suffix_strs, num_suffix_tokens = get_template_suffix_tokens(
@@ -659,7 +769,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         use_system_prompt=args.use_system_prompt,
         num_suffix_tokens=num_suffix_tokens,
         batch_size=args.batch_size,
-        device=actual_device,
+        device=device,
     )
 
     print()
@@ -670,7 +780,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         use_system_prompt=args.use_system_prompt,
         num_suffix_tokens=num_suffix_tokens,
         batch_size=args.batch_size,
-        device=actual_device,
+        device=device,
     )
 
     # candidate directions
@@ -686,7 +796,6 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
     u1_key, u1, cos_matrix = select_u1(
         candidates,
         viable_keys,
-        metric=args.selection_metric,
     )
 
     # build steering plane
@@ -697,22 +806,19 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         u1,
     )
 
-    # sign sanity check
-    # verify u1 projects abstain means higher than answer means on average
-    u1_key_tuple = eval(u1_key)  # "(layer, 'site')" -> (layer, 'site')
-    abstain_proj = float(abstain_means[u1_key_tuple] @ u1)
-    answer_proj = float(answer_means[u1_key_tuple] @ u1)
-    if abstain_proj < answer_proj:
-        print(
-            f"Warning: u1 sign flip needed (abstain proj={abstain_proj:.4f} "
-            f"< answer proj={answer_proj:.4f}). Flipping u1."
-        )
-        u1 = -u1
-    else:
-        print(
-            f"Sign check passed: abstain proj={abstain_proj:.4f} "
-            f"> answer proj={answer_proj:.4f}"
-        )
+    # Sign sanity check — COMMENTED OUT.
+    # The candidate direction is already defined as
+    #     mean_normed(abstain) - mean_normed(answer)
+    # so the sign convention is baked into the construction.
+    # A separate sign check using unnormalized means is conceptually
+    # inconsistent and could spuriously flip u1 in edge cases.
+    # If re-enabled, use normalized means and ast.literal_eval:
+    #
+    # u1_key_tuple = ast.literal_eval(u1_key)
+    # a = normalize(abstain_means[u1_key_tuple].unsqueeze(0), dim=-1).squeeze(0)
+    # b = normalize(answer_means[u1_key_tuple].unsqueeze(0), dim=-1).squeeze(0)
+    # if float(a @ u1) < float(b @ u1):
+    #     u1 = -u1
 
     # save
     out_dir = os.path.dirname(args.output_path)
@@ -737,11 +843,15 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
             "n_answer_prompts": len(answer_prompts),
             "num_suffix_tokens": num_suffix_tokens,
             "suffix_tokens": suffix_strs,
-            "selection_metric": args.selection_metric,
             "norm_floor": args.norm_floor,
             "use_system_prompt": args.use_system_prompt,
             "num_layers": num_layers,
             "hidden_dim": model.config.hidden_size,
+            "seed": args.seed,
+            "dedupe": args.dedupe,
+            "stratified": args.stratified,
+            "model_dtype": str(model_dtype),
+            "exclude_tasks": list(exclude_tasks) if exclude_tasks else [],
         },
     }
 
@@ -825,13 +935,6 @@ def main():
         help="Device: 'auto', 'cuda', 'mps', or 'cpu' (default: auto)",
     )
     parser.add_argument(
-        "--selection_metric",
-        type=str,
-        default="mean_cosine",
-        choices=["mean_cosine", "norm"],
-        help="Metric for selecting u1 (default: mean_cosine)",
-    )
-    parser.add_argument(
         "--norm_floor",
         type=float,
         default=DEFAULT_NORM_FLOOR,
@@ -856,8 +959,23 @@ def main():
         help="Also save a steering_config.npy in the Angular notebook format "
         "(for use with the Angular vLLM fork)",
     )
+    parser.add_argument(
+        "--no_dedupe",
+        action="store_true",
+        help="Disable prompt deduplication by (question, should_abstain). "
+        "By default, dedup is ON to avoid counting identical prompts "
+        "multiple times.",
+    )
+    parser.add_argument(
+        "--stratified",
+        action="store_true",
+        help="Use task-stratified subsampling instead of uniform random. "
+        "Useful when task distribution is very skewed.",
+    )
 
     args = parser.parse_args()
+    # derive dedupe boolean from --no_dedupe flag
+    args.dedupe = not args.no_dedupe
     extract_angular_vectors(args)
 
 
