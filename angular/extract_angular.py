@@ -13,37 +13,37 @@ Algorithm summary
    - `resid_mid`:  residual stream after self-attention + skip, before MLP
                      (operationally: input to the post-attention LayerNorm)
    - `resid_post`: residual stream after the full block (attention + MLP + skip)
-4. Average activations over the template suffix tokens - the shared tail
-   tokens that follow the variable user content (e.g. `<|im_start|>assistant\n`).
-5. Per-token L2-normalize, then mean over suffix positions -> one vector per
-   (sample, layer, site).
+4. Extract activations at the template suffix token(s) - the shared tail
+   tokens that follow the variable user content (e.g. `<|im_start|>assistant\\n`).
+5. Per-token L2-normalize, then pool over suffix positions (last or mean) ->
+   one vector per (sample, layer, site).
 6. Candidate direction = mean_normed(abstain) - mean_normed(answer) per
    (layer, site).  L2-normalize each candidate.
 7. Select best direction u1 (highest mean cosine with other candidates).
-8. Build orthogonal second basis u2 via PCA on all viable candidates +
-   Gram-Schmidt orthogonalisation against u1.
+8. Build orthogonal second basis u2 via PCA in the orthogonal complement
+   of u1.
 9. Save `{u1, u2, candidates, metadata}` as a `.pt` file.
 
 Usage
 -----
 Local (Mac / CPU / MPS):
 
-    python angular/extract_angular.py \
-        --model_name Qwen/Qwen2.5-0.5B-Instruct \
-        --data_path data/abstention_training_dataset.json \
-        --output_path data/angular_vectors/Qwen2_5_0_5B/angular_steering.pt \
-        --use_system_prompt \
-        --max_samples 32 \
+    python angular/extract_angular.py \\
+        --model_name Qwen/Qwen2.5-0.5B-Instruct \\
+        --data_path data/abstention_training_dataset.json \\
+        --output_path data/angular_vectors/Qwen2_5_0_5B/angular_steering.pt \\
+        --use_system_prompt \\
+        --max_samples 32 \\
         --batch_size 4
 
 HPC (CUDA):
 
-    python angular/extract_angular.py \
-        --model_name Qwen/Qwen2.5-7B-Instruct \ 
-        --data_path data/abstention_training_dataset.json \
-        --output_path data/angular_vectors/Qwen2_5_7B/angular_steering.pt \
-        --use_system_prompt \
-        --max_samples 512 \
+    python angular/extract_angular.py \\
+        --model_name Qwen/Qwen2.5-7B-Instruct \\
+        --data_path data/abstention_training_dataset.json \\
+        --output_path data/angular_vectors/Qwen2_5_7B/angular_steering.pt \\
+        --use_system_prompt \\
+        --max_samples 512 \\
         --batch_size 16
 """
 
@@ -52,6 +52,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import logging
 import os
 import re
 from collections import Counter
@@ -65,14 +66,13 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from recipe.system_prompt import SYSTEM_PROMPT
+import ast
+
+logger = logging.getLogger(__name__)
 
 # candidates with a raw (pre-normalisation) L2 norm below this threshold are
 # considered noise and excluded from u1 selection and PCA.
 DEFAULT_NORM_FLOOR = 0.01
-
-# minimum cosine between u2 and u1 below which we accept u2 as sufficiently
-# orthogonal.  cos(85°) ≈ 0.087
-U2_ALIGNMENT_THRESHOLD = 0.10
 
 
 # data loading
@@ -100,7 +100,7 @@ def load_abstention_dataset(
     stratified : bool
         If True and max_samples is set, subsample proportionally by task type
         instead of uniformly at random.  Useful when the task distribution is
-        very skewed (e.g. ``underspecified context`` dominates).
+        very skewed (e.g. `underspecified context` dominates).
 
     Returns
     -------
@@ -113,9 +113,11 @@ def load_abstention_dataset(
     if exclude_tasks:
         before = len(data)
         data = [d for d in data if d["task"] not in exclude_tasks]
-        print(f"Excluded tasks {exclude_tasks}: {before} -> {len(data)} entries")
+        logger.info(
+            "Excluded tasks %s: %d -> %d entries", exclude_tasks, before, len(data)
+        )
 
-    # deduplicate by (question, should_abstain) — each unique prompt appears
+    # deduplicate by (question, should_abstain) - each unique prompt appears
     # multiple times in the dataset due to paired positive/negative responses
     if dedupe:
         seen: set = set()
@@ -126,23 +128,24 @@ def load_abstention_dataset(
                 seen.add(key)
                 deduped.append(d)
 
-        print(f"Deduped prompt-label pairs: {len(data)} -> {len(deduped)}")
+        logger.info("Deduped prompt-label pairs: %d -> %d", len(data), len(deduped))
         data = deduped
 
     abstain_data = [d for d in data if d["should_abstain"]]
     answer_data = [d for d in data if not d["should_abstain"]]
 
-    print(
-        f"Dataset: {len(abstain_data)} should-abstain, "
-        f"{len(answer_data)} should-answer prompts"
+    logger.info(
+        "Dataset: %d should-abstain, %d should-answer prompts",
+        len(abstain_data),
+        len(answer_data),
     )
 
     # log per-task counts by class
     for label, subset in [("abstain", abstain_data), ("answer", answer_data)]:
         task_counts = Counter(d["task"] for d in subset)
-        print(f"  {label} task distribution:")
+        logger.debug("%s task distribution:", label)
         for task, count in sorted(task_counts.items(), key=lambda x: -x[1]):
-            print(f"    {task:30s} {count:5d}")
+            logger.debug("%-30s %5d", task, count)
 
     # sub-sample if requested (deterministic)
     if max_samples is not None:
@@ -157,6 +160,19 @@ def load_abstention_dataset(
 
     abstain_prompts = [d["question"] for d in abstain_data]
     answer_prompts = [d["question"] for d in answer_data]
+
+    # check for prompt overlap between classes
+    overlap = set(abstain_prompts) & set(answer_prompts)
+    if overlap:
+        logger.warning(
+            "%d prompts appear in BOTH classes! "
+            "This may indicate label noise or dataset collisions. "
+            "Examples: %s",
+            len(overlap),
+            list(overlap)[:3],
+        )
+    else:
+        logger.info("Prompt overlap check: no overlap between classes (good)")
 
     return abstain_prompts, answer_prompts
 
@@ -194,9 +210,12 @@ def _subsample(
             idx = rng.choice(len(result), max_samples, replace=False)
             result = [result[i] for i in sorted(idx)]
 
-    print(
-        f"  Sub-sampled {label}: {len(data)} -> {len(result)} prompts"
-        + (" (stratified)" if stratified else "")
+    logger.info(
+        "Sub-sampled %s: %d -> %d prompts%s",
+        label,
+        len(data),
+        len(result),
+        " (stratified)" if stratified else "",
     )
     return result
 
@@ -265,7 +284,7 @@ def get_template_suffix_tokens(
     else:
         num_suffix = len(suffix_strs)
 
-    print(f"Template suffix tokens ({num_suffix}): {suffix_strs}")
+    logger.info("Template suffix tokens (%d): %s", num_suffix, suffix_strs)
     return suffix_strs, num_suffix
 
 
@@ -310,7 +329,7 @@ def prompts_to_chat_batch(
         input_ids = result.input_ids
         attention_mask = result.attention_mask
     else:
-        # fallback: raw tensor (older transformers) — construct mask manually
+        # fallback: raw tensor (older transformers) - construct mask manually
         input_ids = result
         attention_mask = (input_ids != tokenizer.pad_token_id).long()
 
@@ -355,8 +374,45 @@ def _detect_mid_layernorm_pattern(model) -> str:
             f"Children of first layer: {child_names}"
         )
 
-    print(f"Detected resid_mid layernorm pattern: {pattern}")
+    logger.info("Detected resid_mid layernorm pattern: %s", pattern)
     return pattern
+
+
+def _pool_suffix(
+    acts: torch.Tensor,
+    num_suffix_tokens: int,
+    suffix_pool: str,
+    do_normalize: bool = True,
+) -> torch.Tensor:
+    """Extract and pool suffix-token activations.
+
+    Parameters
+    ----------
+    acts : Tensor of shape (batch, seq, hidden)
+
+    num_suffix_tokens : int
+
+    suffix_pool : str
+        `last` - use only the very last token position.
+        `mean` - average over the last `num_suffix_tokens` positions.
+
+    do_normalize : bool
+        L2-normalize each token before pooling.
+
+    Returns
+    -------
+    Tensor of shape (batch, hidden)
+    """
+    if suffix_pool == "last":
+        suffix = acts[:, -1:, :].float()
+    else:
+        suffix = acts[:, -num_suffix_tokens:, :].float()
+
+    if do_normalize:
+        suffix = normalize(suffix, dim=-1)
+
+    # mean over suffix tokens -> (batch, hidden)
+    return suffix.mean(dim=1)
 
 
 def extract_activations(
@@ -367,6 +423,7 @@ def extract_activations(
     num_suffix_tokens: int,
     batch_size: int,
     device: torch.device,
+    suffix_pool: str = "last",
     normalize_acts: bool = True,
 ) -> Dict[Tuple[int, str], torch.Tensor]:
     """Extract mean activations at (layer, site) for a set of prompts.
@@ -374,8 +431,8 @@ def extract_activations(
     Processes prompts in batches.  For each batch:
     - Registers pre-forward hooks on LayerNorm modules to capture `resid_mid`.
     - Uses `output_hidden_states=True` to capture `resid_post`.
-    - Extracts the last `num_suffix_tokens` positions from each.
-    - L2-normalizes per token (if `normalize_acts`), then averages.
+    - Extracts the suffix position(s) from each.
+    - L2-normalizes per token (if `normalize_acts`), then pools.
 
     Returns a dict mapping `(layer_idx, "resid_mid"|"resid_post")` to a
     tensor of shape `(hidden_dim,)` - the population mean.
@@ -395,6 +452,7 @@ def extract_activations(
                 hidden_dim, dtype=torch.float32
             )
     total_samples = 0
+    prompt_lengths: List[int] = []
 
     for batch_start in tqdm(
         range(0, len(prompts), batch_size),
@@ -407,6 +465,9 @@ def extract_activations(
         )
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device)
+
+        # track prompt token lengths (excluding padding)
+        prompt_lengths.extend(attention_mask.sum(dim=1).tolist())
 
         # register hooks for resid_mid
         resid_mid_cache: Dict[int, torch.Tensor] = {}
@@ -445,43 +506,46 @@ def extract_activations(
         # process resid_mid
         for layer_idx in range(num_layers):
             raw = resid_mid_cache[layer_idx]  # (batch, seq, hidden)
-            suffix = raw[:, -num_suffix_tokens:, :].float()  # cast small slice
-
-            if normalize_acts:
-                suffix = normalize(suffix, dim=-1)
-
-            # mean over suffix tokens -> (batch, hidden)
-            mean_per_sample = suffix.mean(dim=1)
-            # accumulate batch sum
-            running_sum[(layer_idx, "resid_mid")] += mean_per_sample.sum(dim=0).cpu()
+            pooled = _pool_suffix(raw, num_suffix_tokens, suffix_pool, normalize_acts)
+            running_sum[(layer_idx, "resid_mid")] += pooled.sum(dim=0).cpu()
 
         # process resid_post: hidden_states[layer_idx + 1] = output of block
         for layer_idx in range(num_layers):
             hs = outputs.hidden_states[layer_idx + 1]  # (batch, seq, hidden)
-            suffix = hs[:, -num_suffix_tokens:, :].float()
-
-            if normalize_acts:
-                suffix = normalize(suffix, dim=-1)
-
-            mean_per_sample = suffix.mean(dim=1)
-            running_sum[(layer_idx, "resid_post")] += mean_per_sample.sum(dim=0).cpu()
+            pooled = _pool_suffix(hs, num_suffix_tokens, suffix_pool, normalize_acts)
+            running_sum[(layer_idx, "resid_post")] += pooled.sum(dim=0).cpu()
 
         total_samples += actual_batch
 
         # free GPU memory
         del outputs, resid_mid_cache, input_ids, attention_mask
         gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
 
     # compute population mean
     result = {}
     for key, s in running_sum.items():
         result[key] = s / total_samples
 
-    print(
-        f"Extracted activations for {total_samples} prompts across "
-        f"{num_layers} layers × 2 sites"
+    logger.info(
+        "Extracted activations for %d prompts across %d layers and 2 sites",
+        total_samples,
+        num_layers,
     )
-    return result
+
+    # log prompt length stats
+    if prompt_lengths:
+        lengths = np.array(prompt_lengths)
+        logger.debug(
+            "Prompt token lengths: min=%d, max=%d, mean=%.1f, median=%.1f",
+            int(lengths.min()),
+            int(lengths.max()),
+            float(lengths.mean()),
+            float(np.median(lengths)),
+        )
+
+    return result, prompt_lengths
 
 
 # candidate direction computation
@@ -494,7 +558,7 @@ def compute_candidates(
 ) -> Tuple[Dict[str, torch.Tensor], Dict[str, float], List[str]]:
     """Compute candidate refusal directions.
 
-    candidate = mean_normed(abstain) − mean_normed(answer), then L2-normalised.
+    candidate = mean_normed(abstain) - mean_normed(answer), then L2-normalised.
 
     Returns
     -------
@@ -527,11 +591,16 @@ def compute_candidates(
             candidates[str_key] = raw_dir / max(raw_norm, 1e-12)
             viable_keys.append(str_key)
         else:
-            candidates[str_key] = raw_dir / max(raw_norm, 1e-12)
+            normed = raw_dir / max(raw_norm, 1e-12)
+            # replace NaNs from degenerate zero-norm directions
+            normed = torch.nan_to_num(normed, nan=0.0)
+            candidates[str_key] = normed
 
-    print(
-        f"Candidate directions: {len(all_keys)} total, "
-        f"{len(viable_keys)} viable (norm > {norm_floor})"
+    logger.info(
+        "Candidate directions: %d total, %d viable (norm > %s)",
+        len(all_keys),
+        len(viable_keys),
+        norm_floor,
     )
     return candidates, raw_norms, viable_keys
 
@@ -556,7 +625,7 @@ def select_u1(
 
     if len(viable_keys) == 1:
         key = viable_keys[0]
-        print(f"Only one viable candidate - selected u1 = {key}")
+        logger.info("Only one viable candidate - selected u1 = %s", key)
         cos_matrix = torch.ones(1, 1)
         return key, candidates[key], cos_matrix
 
@@ -573,7 +642,12 @@ def select_u1(
     best_idx = mean_cos.argmax().item()
 
     u1_key = viable_keys[best_idx]
-    print(f"Selected u1 = {u1_key} (metric=mean_cosine)")
+    logger.info("Selected u1 = %s (metric=mean_cosine)", u1_key)
+
+    # log per-candidate mean cosine for diagnostics
+    for i, key in enumerate(viable_keys):
+        logger.debug("  candidate %s: mean_cos=%.4f", key, mean_cos[i].item())
+
     return u1_key, candidates[u1_key], cos_matrix
 
 
@@ -587,42 +661,26 @@ def build_steering_plane(
 ) -> Tuple[torch.Tensor, torch.Tensor, np.ndarray]:
     """Construct the (u1, u2) steering plane.
 
-    u2 is derived from PCA on all viable candidate directions,
-    orthogonalised against u1 via Gram-Schmidt.
+    u2 is derived from PCA on the viable candidate directions projected into
+    the orthogonal complement of u1.  This ensures u2 is orthogonal to u1 by
+    construction and avoids arbitrary alignment thresholds.
 
     Returns
     -------
     u1 : Tensor of shape (D,) - unit norm
+
     u2 : Tensor of shape (D,) - unit norm, orthogonal to u1
+
     explained_variance : ndarray - PCA explained variance ratios
     """
-    vecs = torch.stack([candidates[k] for k in viable_keys]).numpy()
-
-    pca = PCA().fit(vecs)
-
     u1_np = u1.numpy()
 
-    # try PCA components in order until we find one sufficiently orthogonal to u1
-    u2 = None
-    for i, component in enumerate(pca.components_):
-        # orthogonalise via Gram-Schmidt
-        proj = float(component @ u1_np) * u1_np
-        ortho = component - proj
-        ortho_norm = np.linalg.norm(ortho)
-
-        if ortho_norm > U2_ALIGNMENT_THRESHOLD:
-            u2 = ortho / ortho_norm
-            print(
-                f"u2 from PCA component {i} "
-                f"(orthogonal residual norm = {ortho_norm:.4f})"
-            )
-            break
-
-    if u2 is None:
-        # fallback: random orthogonal vector
-        print(
-            "Warning: All PCA components too aligned with u1. "
-            "Using random orthogonal vector."
+    # special case: <=1 viable candidate
+    if len(viable_keys) <= 1:
+        logger.warning(
+            "Only %d viable candidate(s) - skipping PCA, using deterministic "
+            "random orthogonal vector for u2.",
+            len(viable_keys),
         )
         rng = np.random.default_rng(42)
         rand_vec = rng.standard_normal(u1_np.shape)
@@ -630,12 +688,53 @@ def build_steering_plane(
         ortho = rand_vec - proj
         u2 = ortho / np.linalg.norm(ortho)
 
+        u2_tensor = torch.tensor(u2, dtype=torch.float32)
+        dot = float(u1 @ u2_tensor)
+        assert abs(dot) < 1e-5, f"u1 · u2 = {dot}, not orthogonal!"
+        logger.info("u1 · u2 = %.6f (should be ~0)", dot)
+        return u1, u2_tensor, np.array([])
+
+    # standard case: PCA in orthogonal complement of u1
+    vecs = torch.stack([candidates[k] for k in viable_keys]).numpy()
+
+    # project every candidate into u1's orthogonal complement:
+    #   x_i^perp  =  x_i  -  (x_i · u1) u1
+    projections_onto_u1 = vecs @ u1_np
+    vecs_perp = vecs - projections_onto_u1[:, None] * u1_np
+
+    # PCA on the perpendicular components
+    pca = PCA().fit(vecs_perp)
+
+    # first PC is our u2 (already orthogonal to u1 by construction)
+    u2 = pca.components_[0].copy()
+    u2_norm = np.linalg.norm(u2)
+    if u2_norm < 1e-10:
+        # degenerate case: all candidates are aligned with u1
+        logger.warning(
+            "PCA first component has near-zero norm (%.2e) in orthogonal "
+            "complement. Using random orthogonal vector for u2.",
+            u2_norm,
+        )
+        rng = np.random.default_rng(42)
+        rand_vec = rng.standard_normal(u1_np.shape)
+        proj = float(rand_vec @ u1_np) * u1_np
+        ortho = rand_vec - proj
+        u2 = ortho / np.linalg.norm(ortho)
+    else:
+        u2 /= u2_norm
+
+    logger.info(
+        "u2 from PCA component 0 in orthogonal complement of u1 "
+        "(explained variance ratio: %.4f)",
+        pca.explained_variance_ratio_[0],
+    )
+
     u2_tensor = torch.tensor(u2, dtype=torch.float32)
 
     # verify orthogonality
     dot = float(u1 @ u2_tensor)
     assert abs(dot) < 1e-5, f"u1 · u2 = {dot}, not orthogonal!"
-    print(f"u1 · u2 = {dot:.6f} (should be ~0)")
+    logger.info("u1 · u2 = %.6f (should be ~0)", dot)
 
     return u1, u2_tensor, pca.explained_variance_ratio_
 
@@ -652,17 +751,17 @@ def build_notebook_steering_config(
 ) -> dict:
     """Build a steering config dict in the Angular notebook's format.
 
-    Keys are module names like ``model.layers.{idx}.post_attention_layernorm``.
-    Each value contains ``first_direction``, ``second_direction``, ``mode``.
+    Keys are module names like `model.layers.{idx}.post_attention_layernorm`.
+    Each value contains `first_direction`, `second_direction`, `mode`.
 
     Module targeting follows the notebook convention:
-    - Non-Gemma: ``input_layernorm`` + ``post_attention_layernorm``
-    - Gemma: ``post_attention_layernorm`` + ``post_feedforward_layernorm``
+    - Non-Gemma: `input_layernorm` + `post_attention_layernorm`
+    - Gemma: `post_attention_layernorm` + `post_feedforward_layernorm`
 
-    ``input_layernorm`` at layer *i+1* is equivalent to ``resid_post`` at
+    `input_layernorm` at layer *i+1* is equivalent to `resid_post` at
     layer *i*, so for the last layer it is skipped.
     """
-    # detect layernorm module names — match the notebook's convention
+    # detect layernorm module names - match the notebook's convention
     if "gemma" in model_name.lower():
         layernorm_modules = [
             "post_attention_layernorm",
@@ -682,7 +781,7 @@ def build_notebook_steering_config(
                 if layer_idx < num_layers - 1:
                     module_name = f"model.layers.{layer_idx + 1}.{module}"
                 else:
-                    continue  # skip — no next layer
+                    continue  # skip - no next layer
             else:
                 module_name = f"model.layers.{layer_idx}.{module}"
 
@@ -711,7 +810,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
             device = torch.device("cpu")
     else:
         device = torch.device(args.device)
-    print(f"Device: {device}")
+    logger.info("Device: %s", device)
 
     # load data
     exclude_tasks = None
@@ -728,7 +827,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
     )
 
     # load model
-    print(f"\nLoading model: {args.model_name}")
+    logger.info("Loading model: %s", args.model_name)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
 
     # ensure left-padding for batched prompt extraction
@@ -753,7 +852,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
     )
     model.to(device)
     model.eval()
-    print(f"Model loaded on {device} (dtype={model_dtype})")
+    logger.info("Model loaded on %s (dtype=%s)", device, model_dtype)
 
     # template suffix detection
     suffix_strs, num_suffix_tokens = get_template_suffix_tokens(
@@ -761,8 +860,8 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
     )
 
     # extract activations
-    print()
-    abstain_means = extract_activations(
+    logger.info("Extracting abstain-class activations...")
+    abstain_means, abstain_lengths = extract_activations(
         model,
         tokenizer,
         abstain_prompts,
@@ -770,10 +869,11 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         num_suffix_tokens=num_suffix_tokens,
         batch_size=args.batch_size,
         device=device,
+        suffix_pool=args.suffix_pool,
     )
 
-    print()
-    answer_means = extract_activations(
+    logger.info("Extracting answer-class activations...")
+    answer_means, answer_lengths = extract_activations(
         model,
         tokenizer,
         answer_prompts,
@@ -781,10 +881,10 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         num_suffix_tokens=num_suffix_tokens,
         batch_size=args.batch_size,
         device=device,
+        suffix_pool=args.suffix_pool,
     )
 
     # candidate directions
-    print()
     candidates, raw_norms, viable_keys = compute_candidates(
         abstain_means,
         answer_means,
@@ -792,33 +892,59 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
     )
 
     # select u1
-    print()
     u1_key, u1, cos_matrix = select_u1(
         candidates,
         viable_keys,
     )
 
+    # class-separation sanity check: project class means onto u1
+    try:
+        u1_key_tuple = ast.literal_eval(u1_key)
+        a_mean = normalize(abstain_means[u1_key_tuple].unsqueeze(0), dim=-1).squeeze(0)
+        b_mean = normalize(answer_means[u1_key_tuple].unsqueeze(0), dim=-1).squeeze(0)
+        a_proj = float(a_mean @ u1)
+        b_proj = float(b_mean @ u1)
+        logger.info(
+            "Class separation on u1: abstain projection = %.4f, "
+            "answer projection = %.4f (delta = %.4f)",
+            a_proj,
+            b_proj,
+            a_proj - b_proj,
+        )
+        if a_proj < b_proj:
+            logger.warning(
+                "⚠ Unexpected sign: answer projects higher than abstain onto u1. "
+                "The direction sign convention may be inverted."
+            )
+    except (ValueError, KeyError) as e:
+        logger.debug("Could not compute class-separation check: %s", e)
+
     # build steering plane
-    print()
     u1, u2, pca_variance = build_steering_plane(
         candidates,
         viable_keys,
         u1,
     )
 
-    # Sign sanity check — COMMENTED OUT.
-    # The candidate direction is already defined as
-    #     mean_normed(abstain) - mean_normed(answer)
-    # so the sign convention is baked into the construction.
-    # A separate sign check using unnormalized means is conceptually
-    # inconsistent and could spuriously flip u1 in edge cases.
-    # If re-enabled, use normalized means and ast.literal_eval:
-    #
-    # u1_key_tuple = ast.literal_eval(u1_key)
-    # a = normalize(abstain_means[u1_key_tuple].unsqueeze(0), dim=-1).squeeze(0)
-    # b = normalize(answer_means[u1_key_tuple].unsqueeze(0), dim=-1).squeeze(0)
-    # if float(a @ u1) < float(b @ u1):
-    #     u1 = -u1
+    # --- NaN safety checks ---
+    for name, tensor in [("u1", u1), ("u2", u2)]:
+        assert not torch.isnan(tensor).any(), f"NaN detected in {name}!"
+    assert not torch.isnan(cos_matrix).any(), "NaN detected in cosine matrix!"
+    for k in viable_keys:
+        assert not torch.isnan(candidates[k]).any(), (
+            f"NaN detected in viable candidate {k}!"
+        )
+    # Non-viable candidates may have been zeroed from degenerate norms - that is expected
+    n_non_viable_nan = sum(
+        1
+        for k, v in candidates.items()
+        if k not in viable_keys and torch.isnan(v).any()
+    )
+    if n_non_viable_nan > 0:
+        logger.debug(
+            "%d non-viable candidates had NaN (replaced with zeros)", n_non_viable_nan
+        )
+    logger.debug("NaN check passed: u1, u2, cosine matrix, viable candidates clean")
 
     # save
     out_dir = os.path.dirname(args.output_path)
@@ -826,6 +952,29 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         os.makedirs(out_dir, exist_ok=True)
 
     num_layers = model.config.num_hidden_layers
+
+    # compute per-candidate mean cosine for diagnostics
+    mean_cosine_per_candidate = {}
+    if len(viable_keys) > 1:
+        vecs = torch.stack([candidates[k] for k in viable_keys])
+        cos_mat = vecs @ vecs.T
+        n = len(viable_keys)
+        mask = 1 - torch.eye(n)
+        mean_cos = (cos_mat * mask).sum(dim=1) / (n - 1)
+        for i, key in enumerate(viable_keys):
+            mean_cosine_per_candidate[key] = float(mean_cos[i])
+
+    # prompt length stats
+    all_lengths = abstain_lengths + answer_lengths
+    length_stats = {}
+    if all_lengths:
+        lengths_arr = np.array(all_lengths)
+        length_stats = {
+            "min": int(lengths_arr.min()),
+            "max": int(lengths_arr.max()),
+            "mean": float(lengths_arr.mean()),
+            "median": float(np.median(lengths_arr)),
+        }
 
     save_dict = {
         "u1": u1.float(),
@@ -835,7 +984,9 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         "candidate_norms_raw": raw_norms,
         "cosine_matrix": cos_matrix.float(),
         "viable_keys": viable_keys,
-        "pca_explained_variance": torch.tensor(pca_variance),
+        "pca_explained_variance": torch.tensor(pca_variance)
+        if len(pca_variance) > 0
+        else torch.tensor([]),
         "metadata": {
             "model_name": args.model_name,
             "data_path": args.data_path,
@@ -843,6 +994,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
             "n_answer_prompts": len(answer_prompts),
             "num_suffix_tokens": num_suffix_tokens,
             "suffix_tokens": suffix_strs,
+            "suffix_pool": args.suffix_pool,
             "norm_floor": args.norm_floor,
             "use_system_prompt": args.use_system_prompt,
             "num_layers": num_layers,
@@ -852,11 +1004,13 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
             "stratified": args.stratified,
             "model_dtype": str(model_dtype),
             "exclude_tasks": list(exclude_tasks) if exclude_tasks else [],
+            "mean_cosine_per_candidate": mean_cosine_per_candidate,
+            "prompt_length_stats": length_stats,
         },
     }
 
     torch.save(save_dict, args.output_path)
-    print(f"\nSaved Angular steering artifacts to {args.output_path}")
+    logger.info("Saved Angular steering artifacts to %s", args.output_path)
 
     # optional: notebook-format steering config
     if args.save_notebook_config:
@@ -869,19 +1023,21 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         )
         config_path = args.output_path.replace(".pt", "_steering_config.npy")
         np.save(config_path, config)
-        print(f"Saved notebook-format steering config to {config_path}")
+        logger.info("Saved notebook-format steering config to %s", config_path)
 
     # summary
-    print()
-    print(f"Angular extraction complete for {args.model_name}")
-    print(f"  u1 key:        {u1_key}")
-    print(f"  u1 norm:       {u1.norm():.6f}")
-    print(f"  u2 norm:       {u2.norm():.6f}")
-    print(f"  u1 · u2:       {float(u1 @ u2):.6f}")
-    print(f"  Viable / total candidates: {len(viable_keys)} / {len(candidates)}")
-    print(f"  PCA var (top-3): {pca_variance[:3]}")
-    print(f"  Output: {args.output_path}")
-    print()
+    logger.info("Angular extraction complete for %s", args.model_name)
+    logger.info("  u1 key:        %s", u1_key)
+    logger.info("  u1 norm:       %.6f", u1.norm())
+    logger.info("  u2 norm:       %.6f", u2.norm())
+    logger.info("  u1 · u2:       %.6f", float(u1 @ u2))
+    logger.info(
+        "  Viable / total candidates: %d / %d", len(viable_keys), len(candidates)
+    )
+    if len(pca_variance) > 0:
+        logger.info("  PCA var (top-3): %s", pca_variance[:3])
+    logger.info("  Suffix pool:   %s", args.suffix_pool)
+    logger.info("  Output: %s", args.output_path)
 
 
 # CLI
@@ -972,10 +1128,34 @@ def main():
         help="Use task-stratified subsampling instead of uniform random. "
         "Useful when task distribution is very skewed.",
     )
+    parser.add_argument(
+        "--suffix_pool",
+        type=str,
+        choices=["last", "mean"],
+        default="last",
+        help="How to pool over template suffix tokens. "
+        "'last' uses only the final token position (closer to the notebook). "
+        "'mean' averages over all suffix positions. (default: last)",
+    )
+    parser.add_argument(
+        "--log_level",
+        type=str,
+        choices=["DEBUG", "INFO", "WARNING"],
+        default="INFO",
+        help="Logging verbosity level (default: INFO)",
+    )
 
     args = parser.parse_args()
     # derive dedupe boolean from --no_dedupe flag
     args.dedupe = not args.no_dedupe
+
+    # configure logging
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format="%(asctime)s %(name)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
     extract_angular_vectors(args)
 
 
