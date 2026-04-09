@@ -378,6 +378,24 @@ def _detect_mid_layernorm_pattern(model) -> str:
     return pattern
 
 
+def _detect_decoder_layer_pattern(model) -> str:
+    """Auto-detect decoder block path for capturing resid_post via hooks.
+
+    Returns a format string with `{layer_idx}` placeholder.
+    """
+    for name, _ in model.named_modules():
+        # common patterns: model.layers.0, model.model.layers.0
+        if re.search(r"layers[.\[]0[.\]]?$", name) or name.endswith("layers.0"):
+            pattern = name.replace(".0", ".{layer_idx}")
+            logger.info("Detected decoder layer pattern: %s", pattern)
+            return pattern
+
+    raise RuntimeError(
+        "Cannot find decoder layers. Supported architectures: "
+        "Llama, Qwen, Gemma, Mistral"
+    )
+
+
 def _pool_suffix(
     acts: torch.Tensor,
     num_suffix_tokens: int,
@@ -430,7 +448,7 @@ def extract_activations(
 
     Processes prompts in batches.  For each batch:
     - Registers pre-forward hooks on LayerNorm modules to capture `resid_mid`.
-    - Uses `output_hidden_states=True` to capture `resid_post`.
+    - Registers forward hooks on decoder blocks to capture `resid_post`.
     - Extracts the suffix position(s) from each.
     - L2-normalizes per token (if `normalize_acts`), then pools.
 
@@ -443,6 +461,7 @@ def extract_activations(
     num_layers = model.config.num_hidden_layers
     hidden_dim = model.config.hidden_size
     ln_pattern = _detect_mid_layernorm_pattern(model)
+    decoder_pattern = _detect_decoder_layer_pattern(model)
 
     # running accumulators: (layer, site) -> running sum of (normalised) vectors
     running_sum: Dict[Tuple[int, str], torch.Tensor] = {}
@@ -471,6 +490,7 @@ def extract_activations(
 
         # register hooks for resid_mid
         resid_mid_cache: Dict[int, torch.Tensor] = {}
+        resid_post_cache: Dict[int, torch.Tensor] = {}
         hooks = []
 
         for layer_idx in range(num_layers):
@@ -489,12 +509,26 @@ def extract_activations(
 
             hooks.append(target_module.register_forward_pre_hook(_make_hook(layer_idx)))
 
+        # register hooks for resid_post on decoder-layer outputs
+        for layer_idx in range(num_layers):
+            module_name = decoder_pattern.format(layer_idx=layer_idx)
+            target_module = model.get_submodule(module_name)
+
+            def _make_post_hook(li: int):
+                def _hook(module, args, output):
+                    # decoder block output is resid-post for this layer
+                    x = output[0] if isinstance(output, tuple) else output
+                    resid_post_cache[li] = x.detach()
+
+                return _hook
+
+            hooks.append(target_module.register_forward_hook(_make_post_hook(layer_idx)))
+
         # forward pass
         with torch.inference_mode():
-            outputs = model(
+            model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                output_hidden_states=True,
             )
 
         # remove hooks
@@ -509,16 +543,16 @@ def extract_activations(
             pooled = _pool_suffix(raw, num_suffix_tokens, suffix_pool, normalize_acts)
             running_sum[(layer_idx, "resid_mid")] += pooled.sum(dim=0).cpu()
 
-        # process resid_post: hidden_states[layer_idx + 1] = output of block
+        # process resid_post captured directly from decoder-layer outputs
         for layer_idx in range(num_layers):
-            hs = outputs.hidden_states[layer_idx + 1]  # (batch, seq, hidden)
+            hs = resid_post_cache[layer_idx]  # (batch, seq, hidden)
             pooled = _pool_suffix(hs, num_suffix_tokens, suffix_pool, normalize_acts)
             running_sum[(layer_idx, "resid_post")] += pooled.sum(dim=0).cpu()
 
         total_samples += actual_batch
 
         # free GPU memory
-        del outputs, resid_mid_cache, input_ids, attention_mask
+        del resid_mid_cache, resid_post_cache, input_ids, attention_mask
         gc.collect()
         if device.type == "cuda":
             torch.cuda.empty_cache()
@@ -677,22 +711,10 @@ def build_steering_plane(
 
     # special case: <=1 viable candidate
     if len(viable_keys) <= 1:
-        logger.warning(
-            "Only %d viable candidate(s) - skipping PCA, using deterministic "
-            "random orthogonal vector for u2.",
-            len(viable_keys),
+        raise ValueError(
+            "Need at least 2 viable candidate directions to construct an Angular "
+            f"steering plane, got {len(viable_keys)}."
         )
-        rng = np.random.default_rng(42)
-        rand_vec = rng.standard_normal(u1_np.shape)
-        proj = float(rand_vec @ u1_np) * u1_np
-        ortho = rand_vec - proj
-        u2 = ortho / np.linalg.norm(ortho)
-
-        u2_tensor = torch.tensor(u2, dtype=torch.float32)
-        dot = float(u1 @ u2_tensor)
-        assert abs(dot) < 1e-5, f"u1 · u2 = {dot}, not orthogonal!"
-        logger.info("u1 · u2 = %.6f (should be ~0)", dot)
-        return u1, u2_tensor, np.array([])
 
     # standard case: PCA in orthogonal complement of u1
     vecs = torch.stack([candidates[k] for k in viable_keys]).numpy()
@@ -709,19 +731,11 @@ def build_steering_plane(
     u2 = pca.components_[0].copy()
     u2_norm = np.linalg.norm(u2)
     if u2_norm < 1e-10:
-        # degenerate case: all candidates are aligned with u1
-        logger.warning(
-            "PCA first component has near-zero norm (%.2e) in orthogonal "
-            "complement. Using random orthogonal vector for u2.",
-            u2_norm,
+        raise ValueError(
+            "Degenerate PCA while constructing u2: first orthogonal-complement "
+            f"component has near-zero norm ({u2_norm:.2e})."
         )
-        rng = np.random.default_rng(42)
-        rand_vec = rng.standard_normal(u1_np.shape)
-        proj = float(rand_vec @ u1_np) * u1_np
-        ortho = rand_vec - proj
-        u2 = ortho / np.linalg.norm(ortho)
-    else:
-        u2 /= u2_norm
+    u2 /= u2_norm
 
     logger.info(
         "u2 from PCA component 0 in orthogonal complement of u1 "
