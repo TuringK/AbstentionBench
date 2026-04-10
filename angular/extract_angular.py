@@ -1,32 +1,24 @@
-"""
-Angular Activation Steering - Direction Extraction
+"""Angular steering: extract refusal directions and a (u1, u2) plane from prompts.
 
-Prompt-conditioned extraction of refusal directions and steering-plane
-construction following the Angular activation steering method.
+The procedure follows Vu and Nguyen (2025), adapted here to our abstention
+dataset. Saved tensors and optional ``_steering_config.npy`` match the authors'
+released vLLM v1 steering configuration and runtime interface.
 
-Algorithm summary
------------------
-1. Partition prompts by `should_abstain` label -> two populations.
-2. Tokenize prompts (chat template, left-padded) and run through the model
-   without generating any response tokens.
-3. At each decoder layer, capture activations at two residual-stream sites:
-   - `resid_mid`:  residual stream after self-attention + skip, before MLP
-                     (operationally: input to the post-attention LayerNorm)
-   - `resid_post`: residual stream after the full block (attention + MLP + skip)
-4. Extract activations at the template suffix token(s) - the shared tail
-   tokens that follow the variable user content (e.g. `<|im_start|>assistant\\n`).
-5. Per-token L2-normalize, then pool over suffix positions (last or mean) ->
-   one vector per (sample, layer, site).
-6. Candidate direction = mean_normed(abstain) - mean_normed(answer) per
-   (layer, site).  L2-normalize each candidate.
-7. Select best direction u1 (highest mean cosine with other candidates).
-8. Build orthogonal second basis u2 via PCA in the orthogonal complement
-   of u1.
-9. Save `{u1, u2, candidates, metadata}` as a `.pt` file.
+Vu, H.M. and Nguyen, T.M., 2025. Angular steering: Behavior control via rotation
+in activation space. arXiv:2510.26243.
 
-Usage
------
-Local (Mac / CPU / MPS):
+Steps:
+
+1. Split prompts by ``should_abstain``.
+2. Run the chat-templated, left-padded forward pass without generating tokens.
+3. At each layer, read ``resid_mid`` (post-attention LayerNorm input) and
+   ``resid_post`` (decoder block output).
+4. Pool activations at the template suffix.
+5. Build class-difference candidates, select ``u1`` by mean pairwise cosine,
+   and set ``u2`` from PCA on candidates.
+6. Save a ``.pt`` file and optionally a notebook-format steering config.
+
+Examples:
 
     python angular/extract_angular.py \\
         --model_name Qwen/Qwen2.5-0.5B-Instruct \\
@@ -35,16 +27,6 @@ Local (Mac / CPU / MPS):
         --use_system_prompt \\
         --max_samples 32 \\
         --batch_size 4
-
-HPC (CUDA):
-
-    python angular/extract_angular.py \\
-        --model_name Qwen/Qwen2.5-7B-Instruct \\
-        --data_path data/abstention_training_dataset.json \\
-        --output_path data/angular_vectors/Qwen2_5_7B/angular_steering.pt \\
-        --use_system_prompt \\
-        --max_samples 512 \\
-        --batch_size 16
 """
 
 from __future__ import annotations
@@ -70,9 +52,9 @@ import ast
 
 logger = logging.getLogger(__name__)
 
-# candidates with a raw (pre-normalisation) L2 norm below this threshold are
-# considered noise and excluded from u1 selection and PCA.
-DEFAULT_NORM_FLOOR = 0.01
+# candidates at or below this raw (pre-normalisation) L2 norm are excluded from
+# u1 selection and PCA. The reference notebook used 0.
+DEFAULT_NORM_FLOOR = 0.0
 
 
 # data loading
@@ -86,26 +68,21 @@ def load_abstention_dataset(
     dedupe: bool = True,
     stratified: bool = False,
 ) -> Tuple[List[str], List[str]]:
-    """Load and partition prompts by `should_abstain`.
+    """Load prompts and split into should-abstain and should-answer lists.
 
-    Parameters
-    ----------
-    dedupe : bool
-        Deduplicate by (question, should_abstain) before subsampling.
-        The dataset contains multiple (positive, negative) response pairs per
-        question, but extraction only uses the question text.  Without dedup,
-        identical prompts are counted multiple times, wasting compute and
-        corrupting subsampled distributions.
+    Args:
+        path: Path to the JSON dataset.
+        max_samples: Maximum rows per class after optional deduplication. Use
+            ``None`` to keep all rows.
+        exclude_tasks: If set, drop any row whose ``task`` is in this set.
+        seed: RNG seed for subsampling.
+        dedupe: If True, keep one row per (question, ``should_abstain``) pair so
+            paired responses do not duplicate the same question text.
+        stratified: If True and ``max_samples`` is set, subsample by task
+            proportionally instead of uniformly at random.
 
-    stratified : bool
-        If True and max_samples is set, subsample proportionally by task type
-        instead of uniformly at random.  Useful when the task distribution is
-        very skewed (e.g. `underspecified context` dominates).
-
-    Returns
-    -------
-    abstain_prompts, answer_prompts : list[str], list[str]
-        Two disjoint lists of question strings.
+    Returns:
+        A pair ``(abstain_prompts, answer_prompts)`` of disjoint question lists.
     """
     with open(path) as f:
         data = json.load(f)
@@ -227,19 +204,14 @@ def get_template_suffix_tokens(
     tokenizer: AutoTokenizer,
     use_system_prompt: bool,
 ) -> Tuple[List[str], int]:
-    """Detect the shared tail tokens after the variable user content.
+    """Infer chat-template suffix tokens after the variable user message.
 
-    Tokenizes two dummy single-character prompts and scans backwards to find
-    where they diverge.  Everything after the divergence is the template suffix
-    (e.g.  `<|im_start|>assistant\\n`).
+    Tokenizes two one-character user messages and keeps the shared tail after
+    the last position where they differ. That tail is the generation prompt and
+    assistant prefix region.
 
-    Returns
-    -------
-    suffix_token_strs : list[str]
-        Human-readable token strings (for logging).
-
-    num_suffix_tokens : int
-        Number of suffix tokens.  At least 1 (we always use the last token).
+    Returns:
+        ``suffix_token_strs`` (for logging) and ``num_suffix_tokens`` (for pooling).
     """
 
     def _tokenize(text: str) -> torch.Tensor:
@@ -250,8 +222,8 @@ def get_template_suffix_tokens(
             ]
         else:
             msgs = [{"role": "user", "content": text}]
-        # Use tokenize=True for a single-pass tokenization that preserves
-        # exact token boundaries (consistent with the CAA script).
+        # use tokenize=True for a single-pass tokenization that preserves
+        # token boundaries (consistent with the CAA script)
         ids = tokenizer.apply_chat_template(
             msgs,
             tokenize=True,
@@ -266,7 +238,7 @@ def get_template_suffix_tokens(
     toks_a = _tokenize("a")
     toks_b = _tokenize("b")
 
-    # scan from the end to find the first position where tokens differ.
+    # scan from the end to find the first position where tokens differ
     suffix_start = len(toks_a)
     min_len = min(len(toks_a), len(toks_b))
     for i in range(1, min_len + 1):
@@ -296,14 +268,14 @@ def prompts_to_chat_batch(
     prompts: List[str],
     use_system_prompt: bool,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Tokenize a list of prompts with the chat template, left-padded.
+    """Apply the chat template with batch padding.
 
-    Returns
-    -------
-    input_ids : Tensor of shape (batch, seq_len)
+    The tokenizer should use ``padding_side == "left"`` so batched prompts align
+    on the right.
 
-    attention_mask : Tensor of shape (batch, seq_len)
-        0 for padding tokens, 1 for real tokens.
+    Returns:
+        ``input_ids`` and ``attention_mask``, each with shape ``(batch, seq)``.
+        Mask values are 0 on padding tokens.
     """
     conversations = []
     for p in prompts:
@@ -324,6 +296,7 @@ def prompts_to_chat_batch(
         add_generation_prompt=True,
         return_tensors="pt",
     )
+    
     # transformers >=4.x returns BatchEncoding with input_ids + attention_mask
     if hasattr(result, "input_ids"):
         input_ids = result.input_ids
@@ -339,26 +312,26 @@ def prompts_to_chat_batch(
 # activation extraction
 
 
-def _detect_mid_layernorm_pattern(model) -> str:
-    """Auto-detect the LayerNorm module name used for resid_mid.
-
-    Returns a format string with `{layer_idx}` placeholder.
-    """
-    # inspect the first decoder layer's named children
-    first_layer = None
+def _find_first_decoder_layer(model) -> Tuple[str, object]:
+    """Return `(module_path, module)` for the first decoder block."""
     for name, module in model.named_modules():
         # common patterns: model.layers.0, model.model.layers.0
         if re.search(r"layers[.\[]0[.\]]?$", name) or name.endswith("layers.0"):
-            first_layer = (name, module)
-            break
+            return name, module
 
-    if first_layer is None:
-        raise RuntimeError(
-            "Cannot find decoder layers. Supported architectures: "
-            "Llama, Qwen, Gemma, Mistral"
-        )
+    raise RuntimeError(
+        "Cannot find decoder layers. Supported architectures: "
+        "Llama, Qwen, Gemma, Mistral"
+    )
 
-    base_path, layer_module = first_layer
+
+def _detect_mid_layernorm_pattern(model) -> str:
+    """Infer the post-attention LayerNorm path pattern for ``resid_mid`` hooks.
+
+    Returns:
+        Format string with ``{layer_idx}`` for ``model.get_submodule``.
+    """
+    base_path, layer_module = _find_first_decoder_layer(model)
 
     child_names = [n for n, _ in layer_module.named_children()]
 
@@ -379,21 +352,56 @@ def _detect_mid_layernorm_pattern(model) -> str:
 
 
 def _detect_decoder_layer_pattern(model) -> str:
-    """Auto-detect decoder block path for capturing resid_post via hooks.
+    """Infer one decoder block path pattern for ``resid_post`` forward hooks.
 
-    Returns a format string with `{layer_idx}` placeholder.
+    Returns:
+        Format string with ``{layer_idx}``.
     """
-    for name, _ in model.named_modules():
-        # common patterns: model.layers.0, model.model.layers.0
-        if re.search(r"layers[.\[]0[.\]]?$", name) or name.endswith("layers.0"):
-            pattern = name.replace(".0", ".{layer_idx}")
-            logger.info("Detected decoder layer pattern: %s", pattern)
-            return pattern
+    name, _ = _find_first_decoder_layer(model)
+    pattern = name.replace(".0", ".{layer_idx}")
+    logger.info("Detected decoder layer pattern: %s", pattern)
+    return pattern
 
-    raise RuntimeError(
-        "Cannot find decoder layers. Supported architectures: "
-        "Llama, Qwen, Gemma, Mistral"
+
+def _detect_steering_target_specs(model, model_name: str) -> List[Tuple[str, int]]:
+    """Module names and layer offsets for exporting Angular steering targets.
+
+    Each entry is ``(module_name, layer_offset)``. Offset 0 attaches to the same
+    layer index. Offset 1 attaches to the next layer, which on Llama-like
+    stacks can map ``resid_post`` through the next layer's ``input_layernorm``.
+    """
+    _, layer_module = _find_first_decoder_layer(model)
+    child_names = {n for n, _ in layer_module.named_children()}
+    is_gemma_like = (
+        "gemma" in model_name.lower()
+        or "pre_feedforward_layernorm" in child_names
+        or "post_feedforward_layernorm" in child_names
     )
+
+    specs: List[Tuple[str, int]] = []
+
+    if not is_gemma_like and "input_layernorm" in child_names:
+        specs.append(("input_layernorm", 1))
+
+    if "post_attention_layernorm" in child_names:
+        specs.append(("post_attention_layernorm", 0))
+
+    # Gemma variants use a feedforward LayerNorm name instead of the
+    # Llama/Qwen/Mistral `input_layernorm` + `post_attention_layernorm` pair
+    if is_gemma_like:
+        if "post_feedforward_layernorm" in child_names:
+            specs.append(("post_feedforward_layernorm", 0))
+        elif "pre_feedforward_layernorm" in child_names:
+            specs.append(("pre_feedforward_layernorm", 0))
+
+    if not specs:
+        raise RuntimeError(
+            "Could not identify steering target modules from first decoder layer. "
+            f"Children: {sorted(child_names)}"
+        )
+
+    logger.info("Detected steering target modules: %s", specs)
+    return specs
 
 
 def _pool_suffix(
@@ -402,24 +410,18 @@ def _pool_suffix(
     suffix_pool: str,
     do_normalize: bool = True,
 ) -> torch.Tensor:
-    """Extract and pool suffix-token activations.
+    """Pool activations over the template suffix.
 
-    Parameters
-    ----------
-    acts : Tensor of shape (batch, seq, hidden)
+    Args:
+        acts: Activations with shape ``(batch, seq, hidden)``.
+        num_suffix_tokens: Number of positions at the end of the sequence that
+            belong to the suffix window.
+        suffix_pool: ``last`` keeps only the final position. ``mean`` averages
+            over the last ``num_suffix_tokens`` positions.
+        do_normalize: If True, L2-normalize each token vector before pooling.
 
-    num_suffix_tokens : int
-
-    suffix_pool : str
-        `last` - use only the very last token position.
-        `mean` - average over the last `num_suffix_tokens` positions.
-
-    do_normalize : bool
-        L2-normalize each token before pooling.
-
-    Returns
-    -------
-    Tensor of shape (batch, hidden)
+    Returns:
+        Tensor of shape ``(batch, hidden)``.
     """
     if suffix_pool == "last":
         suffix = acts[:, -1:, :].float()
@@ -443,20 +445,22 @@ def extract_activations(
     device: torch.device,
     suffix_pool: str = "last",
     normalize_acts: bool = True,
-) -> Dict[Tuple[int, str], torch.Tensor]:
-    """Extract mean activations at (layer, site) for a set of prompts.
+) -> Tuple[Dict[Tuple[int, str], torch.Tensor], List[int]]:
+    """Mean pooled activations per (layer, site) over all prompts.
 
-    Processes prompts in batches.  For each batch:
-    - Registers pre-forward hooks on LayerNorm modules to capture `resid_mid`.
-    - Registers forward hooks on decoder blocks to capture `resid_post`.
-    - Extracts the suffix position(s) from each.
-    - L2-normalizes per token (if `normalize_acts`), then pools.
+    Accumulates running sums over batches. Registers pre-forward hooks on the
+    post-attention LayerNorm for ``resid_mid`` and forward hooks on decoder
+    blocks for ``resid_post``. Pools suffix positions using ``suffix_pool`` and
+    optionally L2-normalizes per token before pooling.
 
-    Returns a dict mapping `(layer_idx, "resid_mid"|"resid_post")` to a
-    tensor of shape `(hidden_dim,)` - the population mean.
+    Returns:
+        A tuple ``(means, prompt_token_lengths)``.
 
-    Memory-efficient: accumulates running sums instead of storing per-sample
-    activations.
+        ``means`` maps each key ``(layer_idx, "resid_mid"|"resid_post")`` to a
+        mean vector of shape ``(hidden,)``.
+
+        ``prompt_token_lengths`` lists the non-padding token count for each
+        prompt.
     """
     num_layers = model.config.num_hidden_layers
     hidden_dim = model.config.hidden_size
@@ -590,20 +594,13 @@ def compute_candidates(
     answer_means: Dict[Tuple[int, str], torch.Tensor],
     norm_floor: float = DEFAULT_NORM_FLOOR,
 ) -> Tuple[Dict[str, torch.Tensor], Dict[str, float], List[str]]:
-    """Compute candidate refusal directions.
+    """Class-difference directions from unit-normalized abstain minus answer means.
 
-    candidate = mean_normed(abstain) - mean_normed(answer), then L2-normalised.
+    Returns:
+        A tuple ``(candidates, raw_norms, viable_keys)``.
 
-    Returns
-    -------
-    candidates : dict
-        Key `"(layer, site)"` -> unit-norm direction tensor.
-
-    raw_norms : dict
-        Pre-normalisation L2 norms (useful for diagnostics).
-
-    viable_keys : list
-        Keys with raw norm above `norm_floor`.
+        Dictionary keys are strings ``"(layer, site)"``. The list
+        ``viable_keys`` names candidates whose raw norm exceeds ``norm_floor``.
     """
     candidates: Dict[str, torch.Tensor] = {}
     raw_norms: Dict[str, float] = {}
@@ -646,11 +643,7 @@ def select_u1(
     candidates: Dict[str, torch.Tensor],
     viable_keys: List[str],
 ) -> Tuple[str, torch.Tensor, torch.Tensor]:
-    """Select the best refusal direction u1.
-
-    Uses mean cosine similarity: the candidate with the highest mean cosine
-    with all other viable candidates is selected as u1.
-    """
+    """Select ``u1`` as the viable candidate with the highest mean cosine to all others."""
     if not viable_keys:
         raise ValueError(
             "No viable candidate directions found. "
@@ -693,22 +686,15 @@ def build_steering_plane(
     viable_keys: List[str],
     u1: torch.Tensor,
 ) -> Tuple[torch.Tensor, torch.Tensor, np.ndarray]:
-    """Construct the (u1, u2) steering plane.
+    """Set ``u2`` to the first PCA axis on viable candidates. Leaves ``u1`` fixed.
 
-    u2 is derived from PCA on the viable candidate directions projected into
-    the orthogonal complement of u1.  This ensures u2 is orthogonal to u1 by
-    construction and avoids arbitrary alignment thresholds.
+    The steering runtime orthogonalizes ``u2`` against ``u1`` when it builds the
+    basis.
 
-    Returns
-    -------
-    u1 : Tensor of shape (D,) - unit norm
-
-    u2 : Tensor of shape (D,) - unit norm, orthogonal to u1
-
-    explained_variance : ndarray - PCA explained variance ratios
+    Returns:
+        ``u1``, ``u2``, and ``explained_variance_ratio``. Vectors ``u1`` and
+        ``u2`` are unit norm.
     """
-    u1_np = u1.numpy()
-
     # special case: <=1 viable candidate
     if len(viable_keys) <= 1:
         raise ValueError(
@@ -716,39 +702,31 @@ def build_steering_plane(
             f"steering plane, got {len(viable_keys)}."
         )
 
-    # standard case: PCA in orthogonal complement of u1
+    # notebook-faithful: PCA on the viable candidate directions directly
     vecs = torch.stack([candidates[k] for k in viable_keys]).numpy()
+    pca = PCA().fit(vecs)
 
-    # project every candidate into u1's orthogonal complement:
-    #   x_i^perp  =  x_i  -  (x_i · u1) u1
-    projections_onto_u1 = vecs @ u1_np
-    vecs_perp = vecs - projections_onto_u1[:, None] * u1_np
-
-    # PCA on the perpendicular components
-    pca = PCA().fit(vecs_perp)
-
-    # first PC is our u2 (already orthogonal to u1 by construction)
+    # first PC is saved raw to match the notebook
+    # the runtime orthogonalizes it against u1 when constructing the steering basis
     u2 = pca.components_[0].copy()
     u2_norm = np.linalg.norm(u2)
     if u2_norm < 1e-10:
         raise ValueError(
-            "Degenerate PCA while constructing u2: first orthogonal-complement "
-            f"component has near-zero norm ({u2_norm:.2e})."
+            "Degenerate PCA while constructing u2: first component has near-zero "
+            f"norm ({u2_norm:.2e})."
         )
     u2 /= u2_norm
 
     logger.info(
-        "u2 from PCA component 0 in orthogonal complement of u1 "
-        "(explained variance ratio: %.4f)",
+        "u2 from raw PCA component 0 (not orthogonalized, explained variance "
+        "ratio %.4f)",
         pca.explained_variance_ratio_[0],
     )
 
     u2_tensor = torch.tensor(u2, dtype=torch.float32)
 
-    # verify orthogonality
     dot = float(u1 @ u2_tensor)
-    assert abs(dot) < 1e-5, f"u1 · u2 = {dot}, not orthogonal!"
-    logger.info("u1 · u2 = %.6f (should be ~0)", dot)
+    logger.info("u1 · u2 = %.6f before runtime orthogonalization", dot)
 
     return u1, u2_tensor, pca.explained_variance_ratio_
 
@@ -763,43 +741,32 @@ def build_notebook_steering_config(
     num_layers: int,
     model_name: str,
 ) -> dict:
-    """Build a steering config dict in the Angular notebook's format.
+    """Build a per-module map for Angular and vLLM steering.
 
-    Keys are module names like `model.layers.{idx}.post_attention_layernorm`.
-    Each value contains `first_direction`, `second_direction`, `mode`.
-
-    Module targeting follows the notebook convention:
-    - Non-Gemma: `input_layernorm` + `post_attention_layernorm`
-    - Gemma: `post_attention_layernorm` + `post_feedforward_layernorm`
-
-    `input_layernorm` at layer *i+1* is equivalent to `resid_post` at
-    layer *i*, so for the last layer it is skipped.
+    Each value uses ``mode="rotate_to"`` with ``first_direction`` and
+    ``second_direction``. Keys use detected submodule paths instead of a fixed
+    ``model.layers.*`` prefix. Module choices follow the published notebook
+    layout for Llama-like versus Gemma stacks. Entries that would use a
+    next-layer ``input_layernorm`` beyond the last layer are omitted.
     """
-    # detect layernorm module names - match the notebook's convention
-    if "gemma" in model_name.lower():
-        layernorm_modules = [
-            "post_attention_layernorm",
-            "post_feedforward_layernorm",
-        ]
-    else:
-        layernorm_modules = ["input_layernorm", "post_attention_layernorm"]
+    decoder_pattern = _detect_decoder_layer_pattern(model)
+    target_specs = _detect_steering_target_specs(model, model_name)
 
-    u1_np = u1.numpy()
-    u2_np = u2.numpy()
+    u1_np = u1.detach().cpu().numpy()
+    u2_np = u2.detach().cpu().numpy()
 
     config = {}
     for layer_idx in range(num_layers):
-        for module in layernorm_modules:
-            # input_layernorm at layer i+1 is resid_post at layer i
-            if module == "input_layernorm":
-                if layer_idx < num_layers - 1:
-                    module_name = f"model.layers.{layer_idx + 1}.{module}"
-                else:
-                    continue  # skip - no next layer
-            else:
-                module_name = f"model.layers.{layer_idx}.{module}"
+        for module_name, layer_offset in target_specs:
+            target_layer_idx = layer_idx + layer_offset
+            if target_layer_idx >= num_layers:
+                continue
 
-            config[module_name] = {
+            full_module_name = (
+                decoder_pattern.format(layer_idx=target_layer_idx) + f".{module_name}"
+            )
+
+            config[full_module_name] = {
                 "mode": "rotate_to",
                 "first_direction": u1_np.copy(),
                 "second_direction": u2_np.copy(),
@@ -812,7 +779,7 @@ def build_notebook_steering_config(
 
 
 def extract_angular_vectors(args: argparse.Namespace) -> None:
-    """Main entry point: load data, extract activations, compute plane, save."""
+    """Run the full extraction pipeline. Writes ``.pt`` and optionally ``_steering_config.npy``."""
 
     # resolve device
     if args.device == "auto":
@@ -940,7 +907,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         u1,
     )
 
-    # --- NaN safety checks ---
+    # NaN checks on exported tensors
     for name, tensor in [("u1", u1), ("u2", u2)]:
         assert not torch.isnan(tensor).any(), f"NaN detected in {name}!"
     assert not torch.isnan(cos_matrix).any(), "NaN detected in cosine matrix!"
@@ -948,7 +915,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         assert not torch.isnan(candidates[k]).any(), (
             f"NaN detected in viable candidate {k}!"
         )
-    # Non-viable candidates may have been zeroed from degenerate norms - that is expected
+    # non-viable candidates may have been zeroed from degenerate norms - that is expected
     n_non_viable_nan = sum(
         1
         for k, v in candidates.items()
@@ -1017,6 +984,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
             "dedupe": args.dedupe,
             "stratified": args.stratified,
             "model_dtype": str(model_dtype),
+            "u2_construction": "raw_pca_component_0",
             "exclude_tasks": list(exclude_tasks) if exclude_tasks else [],
             "mean_cosine_per_candidate": mean_cosine_per_candidate,
             "prompt_length_stats": length_stats,
@@ -1059,7 +1027,10 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Angular Activation Steering - Direction Extraction",
+        description=(
+            "Extract Angular steering directions (Vu and Nguyen, 2025). "
+            "See the module docstring for the full citation."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -1127,7 +1098,7 @@ def main():
         "--save_notebook_config",
         action="store_true",
         help="Also save a steering_config.npy in the Angular notebook format "
-        "(for use with the Angular vLLM fork)",
+        "(for use with the Angular runtimes, including vLLM v1 steering)",
     )
     parser.add_argument(
         "--no_dedupe",
