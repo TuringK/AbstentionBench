@@ -1,3 +1,3 @@
 [submodule "angular-steering"]
 	path = angular-steering
-	url = git@github.com:lone17/angular-steering.git
+	url = https://github.com/lone17/angular-steering.git
