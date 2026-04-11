@@ -1060,8 +1060,9 @@ def main():
     parser.add_argument(
         "--max_samples",
         type=int,
-        default=512,
-        help="Max prompts per class (default: 512, matching Angular notebook)",
+        default=None,
+        help="Max prompts per class after deduplication. "
+        "Omit to use all prompts. Set to 512 to match the Angular notebook.",
     )
     parser.add_argument(
         "--batch_size",
