@@ -183,9 +183,18 @@ def main():
             is_layer_explicit = False
 
         if len(coeffs_to_sweep) > 1 and not is_layer_explicit and not args.force_4d:
-            print(f"Error: Attempting to sweep {len(coeffs_to_sweep)} coeffs across all auto-detected layers for {model_id}.", file=sys.stderr)
-            print("This creates a 4D sweep which may generate too many jobs.", file=sys.stderr)
-            print("Safety net: Please either specify layers explicitly (in config or via --layers), or use the --force-4d flag.", file=sys.stderr)
+            print(
+                f"Error: Attempting to sweep {len(coeffs_to_sweep)} coeffs across all auto-detected layers for {model_id}.",
+                file=sys.stderr,
+            )
+            print(
+                "This creates a 4D sweep which may generate too many jobs.",
+                file=sys.stderr,
+            )
+            print(
+                "Safety net: Please either specify layers explicitly (in config or via --layers), or use the --force-4d flag.",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
         for current_coeff in coeffs_to_sweep:
