@@ -4,48 +4,48 @@
 #SBATCH --error=scripts/logs/extract/%x_%A_%a.err
 
 # Generic SLURM job template for CAA vector extraction.
-# All values are passed via environment variables (EXT_*)
+# All values are passed via environment variables (CAA_EXT_*)
 # set by caa/run_extraction.py.
 
 module load GCC
 module load CUDA/12.4
 
 LAYER_IDX="${SLURM_ARRAY_TASK_ID}"
-OUTPUT_FILE="${EXT_OUTPUT_DIR}/vec_layer_${LAYER_IDX}.pt"
+OUTPUT_FILE="${CAA_EXT_OUTPUT_DIR}/vec_layer_${LAYER_IDX}.pt"
 
 echo "=== CAA Extraction ==="
-echo "Model:  ${EXT_MODEL_NAME}"
+echo "Model:  ${CAA_EXT_MODEL_NAME}"
 echo "Layer:  ${LAYER_IDX}"
 echo "Output: ${OUTPUT_FILE}"
-echo "Data:   ${EXT_DATA_PATH}"
+echo "Data:   ${CAA_EXT_DATA_PATH}"
 echo "======================"
 
 export PYTHONPATH="${PYTHONPATH}:$(pwd)"
 
 # build optional flags
 EXTRA_ARGS=""
-if [[ "${EXT_USE_SYSTEM_PROMPT}" == "1" ]]; then
+if [[ "${CAA_EXT_USE_SYSTEM_PROMPT}" == "1" ]]; then
     EXTRA_ARGS="${EXTRA_ARGS} --use_system_prompt"
 fi
-if [[ "${EXT_WEIGHTED}" == "1" ]]; then
+if [[ "${CAA_EXT_WEIGHTED}" == "1" ]]; then
     EXTRA_ARGS="${EXTRA_ARGS} --weighted"
 fi
-if [[ -n "${EXT_EXCLUDE_SCENARIOS}" ]]; then
-    EXTRA_ARGS="${EXTRA_ARGS} --exclude_scenarios ${EXT_EXCLUDE_SCENARIOS}"
+if [[ -n "${CAA_EXT_EXCLUDE_SCENARIOS}" ]]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --exclude_scenarios ${CAA_EXT_EXCLUDE_SCENARIOS}"
 fi
-if [[ "${EXT_NORMALIZE}" == "1" ]]; then
+if [[ "${CAA_EXT_NORMALIZE}" == "1" ]]; then
     EXTRA_ARGS="${EXTRA_ARGS} --normalize"
 fi
-if [[ -n "${EXT_RESPONSE_TOKENS}" ]]; then
-    EXTRA_ARGS="${EXTRA_ARGS} --response_tokens ${EXT_RESPONSE_TOKENS}"
+if [[ -n "${CAA_EXT_RESPONSE_TOKENS}" ]]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --response_tokens ${CAA_EXT_RESPONSE_TOKENS}"
 fi
-if [[ -n "${EXT_DATA_FORMAT}" ]]; then
-    EXTRA_ARGS="${EXTRA_ARGS} --data_format ${EXT_DATA_FORMAT}"
+if [[ -n "${CAA_EXT_DATA_FORMAT}" ]]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --data_format ${CAA_EXT_DATA_FORMAT}"
 fi
 
-"${EXT_PYTHON_BIN}" caa/extract_caa_vectors.py \
-    --model_name "${EXT_MODEL_NAME}" \
-    --data_path "${EXT_DATA_PATH}" \
+"${CAA_EXT_PYTHON_BIN}" caa/extract_caa_vectors.py \
+    --model_name "${CAA_EXT_MODEL_NAME}" \
+    --data_path "${CAA_EXT_DATA_PATH}" \
     --output_path "${OUTPUT_FILE}" \
     --layer_idx ${LAYER_IDX} \
     ${EXTRA_ARGS}

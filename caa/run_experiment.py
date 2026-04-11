@@ -94,16 +94,16 @@ def build_sbatch_command(
 
     # env vars to export to the job
     env_vars = {
-        "EXP_MODEL_ID": model_id,
-        "EXP_VECTOR_DIR": str(vector_dir),
-        "EXP_COMMON_DIR_BASE": str(common_dir_base),
-        "EXP_DATASETS": str(config.datasets),
-        "EXP_JUDGE": str(config.judge),
-        "EXP_SINGLE_JOB": str(config.single_job),
-        "EXP_MODE": str(config.mode),
-        "EXP_COEFF": str(current_coeff),
-        "EXP_PYTHON_BIN": str(python_bin),
-        "EXP_USER_EMAIL": str(user_email),
+        "CAA_EXP_MODEL_ID": model_id,
+        "CAA_EXP_VECTOR_DIR": str(vector_dir),
+        "CAA_EXP_COMMON_DIR_BASE": str(common_dir_base),
+        "CAA_EXP_DATASETS": str(config.datasets),
+        "CAA_EXP_JUDGE": str(config.judge),
+        "CAA_EXP_SINGLE_JOB": str(config.single_job),
+        "CAA_EXP_MODE": str(config.mode),
+        "CAA_EXP_COEFF": str(current_coeff),
+        "CAA_EXP_PYTHON_BIN": str(python_bin),
+        "CAA_EXP_USER_EMAIL": str(user_email),
     }
 
     cmd = [

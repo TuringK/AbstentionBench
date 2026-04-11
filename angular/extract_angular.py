@@ -894,7 +894,7 @@ def extract_angular_vectors(args: argparse.Namespace) -> None:
         )
         if a_proj < b_proj:
             logger.warning(
-                "⚠ Unexpected sign: answer projects higher than abstain onto u1. "
+                "Unexpected sign: answer projects higher than abstain onto u1. "
                 "The direction sign convention may be inverted."
             )
     except (ValueError, KeyError) as e:

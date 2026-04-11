@@ -89,17 +89,17 @@ def build_extraction_sbatch(
     # env vars to export to the job
     export_vars = [
         "ALL",
-        f"EXT_MODEL_NAME={hf_model_name}",
-        f"EXT_MODEL_ID={model_id}",
-        f"EXT_DATA_PATH={data_path}",
-        f"EXT_OUTPUT_DIR={output_dir}",
-        f"EXT_PYTHON_BIN={python_bin}",
-        f"EXT_USE_SYSTEM_PROMPT={'1' if config.extraction.use_system_prompt else '0'}",
-        f"EXT_WEIGHTED={'1' if config.extraction.weighted else '0'}",
-        f"EXT_EXCLUDE_SCENARIOS={config.extraction.exclude_scenarios}",
-        f"EXT_NORMALIZE={'1' if config.extraction.normalize else '0'}",
-        f"EXT_RESPONSE_TOKENS={config.extraction.response_tokens}",
-        f"EXT_DATA_FORMAT={config.extraction.data_format}",
+        f"CAA_EXT_MODEL_NAME={hf_model_name}",
+        f"CAA_EXT_MODEL_ID={model_id}",
+        f"CAA_EXT_DATA_PATH={data_path}",
+        f"CAA_EXT_OUTPUT_DIR={output_dir}",
+        f"CAA_EXT_PYTHON_BIN={python_bin}",
+        f"CAA_EXT_USE_SYSTEM_PROMPT={'1' if config.extraction.use_system_prompt else '0'}",
+        f"CAA_EXT_WEIGHTED={'1' if config.extraction.weighted else '0'}",
+        f"CAA_EXT_EXCLUDE_SCENARIOS={config.extraction.exclude_scenarios}",
+        f"CAA_EXT_NORMALIZE={'1' if config.extraction.normalize else '0'}",
+        f"CAA_EXT_RESPONSE_TOKENS={config.extraction.response_tokens}",
+        f"CAA_EXT_DATA_FORMAT={config.extraction.data_format}",
     ]
 
     cmd = [

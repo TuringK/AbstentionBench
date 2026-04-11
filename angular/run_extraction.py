@@ -8,7 +8,7 @@ to extract one Angular steering artifact per model.
 import argparse
 import subprocess
 import sys
-from typing import Dict
+from typing import Dict, Optional
 
 from pydantic import BaseModel, field_validator
 
@@ -24,7 +24,7 @@ from caa.utils import (
 
 class AngularExtractionOptions(BaseModel):
     use_system_prompt: bool = True
-    max_samples: int = 512
+    max_samples: Optional[int] = None
     batch_size: int = 4
     norm_floor: float = 0.0
     exclude_tasks: str = ""
@@ -71,22 +71,23 @@ def build_sbatch_command(
 
     export_vars = [
         "ALL",
-        f"ANG_MODEL_NAME={hf_model_name}",
-        f"ANG_DATA_PATH={data_path}",
-        f"ANG_OUTPUT_PATH={output_path}",
-        f"ANG_PYTHON_BIN={python_bin}",
-        f"ANG_USE_SYSTEM_PROMPT={'1' if config.extraction.use_system_prompt else '0'}",
-        f"ANG_MAX_SAMPLES={config.extraction.max_samples}",
-        f"ANG_BATCH_SIZE={config.extraction.batch_size}",
-        f"ANG_NORM_FLOOR={config.extraction.norm_floor}",
-        f"ANG_EXCLUDE_TASKS={config.extraction.exclude_tasks}",
-        f"ANG_SEED={config.extraction.seed}",
-        f"ANG_DEDUPE={'1' if config.extraction.dedupe else '0'}",
-        f"ANG_STRATIFIED={'1' if config.extraction.stratified else '0'}",
-        f"ANG_SUFFIX_POOL={config.extraction.suffix_pool}",
-        f"ANG_SAVE_NOTEBOOK_CONFIG={'1' if config.extraction.save_notebook_config else '0'}",
-        f"ANG_LOG_LEVEL={config.extraction.log_level}",
+        f"ANG_EXT_MODEL_NAME={hf_model_name}",
+        f"ANG_EXT_DATA_PATH={data_path}",
+        f"ANG_EXT_OUTPUT_PATH={output_path}",
+        f"ANG_EXT_PYTHON_BIN={python_bin}",
+        f"ANG_EXT_USE_SYSTEM_PROMPT={'1' if config.extraction.use_system_prompt else '0'}",
+        f"ANG_EXT_BATCH_SIZE={config.extraction.batch_size}",
+        f"ANG_EXT_NORM_FLOOR={config.extraction.norm_floor}",
+        f"ANG_EXT_EXCLUDE_TASKS={config.extraction.exclude_tasks}",
+        f"ANG_EXT_SEED={config.extraction.seed}",
+        f"ANG_EXT_DEDUPE={'1' if config.extraction.dedupe else '0'}",
+        f"ANG_EXT_STRATIFIED={'1' if config.extraction.stratified else '0'}",
+        f"ANG_EXT_SUFFIX_POOL={config.extraction.suffix_pool}",
+        f"ANG_EXT_SAVE_NOTEBOOK_CONFIG={'1' if config.extraction.save_notebook_config else '0'}",
+        f"ANG_EXT_LOG_LEVEL={config.extraction.log_level}",
     ]
+    if config.extraction.max_samples is not None:
+        export_vars.append(f"ANG_EXT_MAX_SAMPLES={config.extraction.max_samples}")
 
     return [
         "sbatch",
@@ -121,13 +122,14 @@ def run_local(
         "--model_name", hf_model_name,
         "--data_path", data_path,
         "--output_path", output_path,
-        "--max_samples", str(config.extraction.max_samples),
         "--batch_size", str(config.extraction.batch_size),
         "--norm_floor", str(config.extraction.norm_floor),
         "--seed", str(config.extraction.seed),
         "--suffix_pool", config.extraction.suffix_pool,
         "--log_level", config.extraction.log_level,
     ]
+    if config.extraction.max_samples is not None:
+        cmd.extend(["--max_samples", str(config.extraction.max_samples)])
 
     if config.extraction.use_system_prompt:
         cmd.append("--use_system_prompt")
