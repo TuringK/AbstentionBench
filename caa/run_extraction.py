@@ -46,6 +46,7 @@ class ExtractionOptions(BaseModel):
     exclude_scenarios: str = ""
     normalize: bool = False
     response_tokens: int = 10
+    data_format: str = "auto"
     layers: Optional[str] = None
 
 
@@ -83,7 +84,7 @@ def build_extraction_sbatch(
     output_dir = f"{project_root}/{config.output_base}/{model_id}"
 
     job_name = f"extract_{model_id}"
-    job_template = "scripts/extraction_template.sh"
+    job_template = "scripts/extraction_caa_template.sh"
 
     # env vars to export to the job
     export_vars = [
@@ -98,6 +99,7 @@ def build_extraction_sbatch(
         f"EXT_EXCLUDE_SCENARIOS={config.extraction.exclude_scenarios}",
         f"EXT_NORMALIZE={'1' if config.extraction.normalize else '0'}",
         f"EXT_RESPONSE_TOKENS={config.extraction.response_tokens}",
+        f"EXT_DATA_FORMAT={config.extraction.data_format}",
     ]
 
     cmd = [
@@ -142,6 +144,7 @@ def run_local(
             "--output_path", output_file,
             "--layer_idx", str(layer_idx),
             "--response_tokens", str(config.extraction.response_tokens),
+            "--data_format", config.extraction.data_format,
         ]
 
         if config.extraction.use_system_prompt:

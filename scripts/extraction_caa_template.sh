@@ -39,6 +39,9 @@ fi
 if [[ -n "${EXT_RESPONSE_TOKENS}" ]]; then
     EXTRA_ARGS="${EXTRA_ARGS} --response_tokens ${EXT_RESPONSE_TOKENS}"
 fi
+if [[ -n "${EXT_DATA_FORMAT}" ]]; then
+    EXTRA_ARGS="${EXTRA_ARGS} --data_format ${EXT_DATA_FORMAT}"
+fi
 
 "${EXT_PYTHON_BIN}" caa/extract_caa_vectors.py \
     --model_name "${EXT_MODEL_NAME}" \

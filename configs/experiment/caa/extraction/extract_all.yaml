@@ -7,7 +7,7 @@ models:
   Qwen2_5_3B_Instruct: Qwen/Qwen2.5-3B-Instruct
   Qwen2_5_7B_Instruct: Qwen/Qwen2.5-7B-Instruct
   Gemma3_1B_Instruct: google/gemma-3-1b-it
-  Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3-8B
+  Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3.1-8B
 
 data_path: data/sample_pairs_with_scenario.csv
 output_base: data/vectors

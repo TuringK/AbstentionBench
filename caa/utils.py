@@ -186,8 +186,8 @@ def parse_vector_indices(indices_args: list[str]) -> list[int]:
     return sorted(list(indices))
 
 
-def add_common_cli_args(parser) -> None:
-    """Add --dry-run, --model, and --layers arguments common to all orchestrators."""
+def add_common_cli_args(parser, include_layers: bool = True) -> None:
+    """Add --dry-run, --model, and optionally --layers arguments."""
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -199,14 +199,15 @@ def add_common_cli_args(parser) -> None:
         default=None,
         help="Run only this model (must be a key in the config's models map)",
     )
-    parser.add_argument(
-        "--layers",
-        type=str,
-        nargs="*",
-        default=None,
-        help="Run exactly these layers (overrides config auto-detection). "
-        "Accepts space/comma separated values or ranges (e.g. 1 3 5-10 or 1,3,5-10)",
-    )
+    if include_layers:
+        parser.add_argument(
+            "--layers",
+            type=str,
+            nargs="*",
+            default=None,
+            help="Run exactly these layers (overrides config auto-detection). "
+            "Accepts space/comma separated values or ranges (e.g. 1 3 5-10 or 1,3,5-10)",
+        )
 
 
 def filter_models(models: dict, model_key: Optional[str]) -> dict:

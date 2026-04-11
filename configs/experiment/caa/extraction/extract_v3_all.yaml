@@ -1,24 +1,28 @@
-name: extract_angular
+name: extract_v3_all
 
-# model_id: hf_model_name
+# v3 extraction on abstention_training_dataset.json:
+# - auto detects JSON format
+# - fixed token boundary, bf16 model, float32 accumulation
+# - global mean aggregation
 models:
   Qwen2_5_0_5B_Instruct: Qwen/Qwen2.5-0.5B-Instruct
   Qwen2_5_1_5B_Instruct: Qwen/Qwen2.5-1.5B-Instruct
   Qwen2_5_3B_Instruct: Qwen/Qwen2.5-3B-Instruct
   Qwen2_5_7B_Instruct: Qwen/Qwen2.5-7B-Instruct
   Gemma3_1B_Instruct: google/gemma-3-1b-it
-  Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3-8B
+  Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3.1-8B
 
 data_path: data/abstention_training_dataset.json
-output_base: data/angular_vectors
+output_base: data/vectors_v3
 
 extraction:
   use_system_prompt: true
-  max_samples: 512
-  batch_size: 16
-  selection_metric: mean_cosine
-  norm_floor: 0.01
-  exclude_tasks: ""
+  weighted: false
+  exclude_scenarios: ""
+  normalize: false
+  response_tokens: 10
+  data_format: auto
+  # layers: auto-detected from HF model config (second half of network)
 
 slurm:
   partition: gpu,gpu-h100,gpu-h100-nvl
