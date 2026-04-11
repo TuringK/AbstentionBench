@@ -35,7 +35,7 @@ from caa.utils import (
     filter_models,
     get_env_var,
     load_yaml_config,
-    parse_layer_range,
+    parse_vector_indices,
     submit_sbatch,
 )
 
@@ -73,8 +73,7 @@ def build_extraction_sbatch(
     config: ExtractionConfig,
     model_id: str,
     hf_model_name: str,
-    min_layer: int,
-    max_layer: int,
+    layer_selector: str,
     project_root: str,
     python_bin: str,
 ) -> list[str]:
@@ -105,7 +104,7 @@ def build_extraction_sbatch(
     cmd = [
         "sbatch",
         f"--job-name={job_name}",
-        f"--array={min_layer}-{max_layer}",
+        f"--array={layer_selector}",
         f"--partition={config.slurm.partition}",
         f"--qos={config.slurm.qos}",
         f"--gres={config.slurm.gres}",
@@ -123,8 +122,7 @@ def run_local(
     config: ExtractionConfig,
     model_id: str,
     hf_model_name: str,
-    min_layer: int,
-    max_layer: int,
+    layer_indices: list[int],
     project_root: str,
     python_bin: str,
     dry_run: bool = False,
@@ -134,7 +132,8 @@ def run_local(
     data_path = f"{project_root}/{config.data_path}"
     output_dir = f"{project_root}/{config.output_base}/{model_id}"
 
-    for layer_idx in range(min_layer, max_layer + 1):
+    total_layers = len(layer_indices)
+    for i, layer_idx in enumerate(layer_indices, start=1):
         output_file = f"{output_dir}/vec_layer_{layer_idx}.pt"
 
         cmd = [
@@ -160,7 +159,7 @@ def run_local(
             print(f"  [DRY RUN] Layer {layer_idx}: {' '.join(cmd)}")
             continue
 
-        print(f"\nLayer {layer_idx}/{max_layer}")
+        print(f"\nLayer {i}/{total_layers} (idx={layer_idx})")
         print(f"Output: {output_file}\n")
 
         result = subprocess.run(cmd)
@@ -172,7 +171,8 @@ def run_local(
             sys.exit(1)
 
     if not dry_run:
-        print(f"\nAll layers ({min_layer}-{max_layer}) extracted for {model_id}.")
+        layer_selector = ",".join(map(str, layer_indices))
+        print(f"\nAll layers ({layer_selector}) extracted for {model_id}.")
 
 
 def main():
@@ -212,26 +212,31 @@ def main():
     models = filter_models(config.models, args.model)
 
     for model_id, hf_model_name in models.items():
-        # resolve layer range
-        if config.extraction.layers:
-            min_layer, max_layer = parse_layer_range(config.extraction.layers)
+        # resolve layers
+        if args.layers:
+            layer_indices = parse_vector_indices(args.layers)
             print(f"Model: {model_id} ({hf_model_name})")
-            print(f"  Layers: {min_layer}-{max_layer} (from config)")
+            print(f"  Layers: {','.join(map(str, layer_indices))} (from CLI --layers)")
+        elif config.extraction.layers:
+            layer_indices = parse_vector_indices([config.extraction.layers])
+            print(f"Model: {model_id} ({hf_model_name})")
+            print(f"  Layers: {','.join(map(str, layer_indices))} (from config)")
         else:
             print(f"Model: {model_id} ({hf_model_name})")
             print("  Auto-detecting layer range from model config...")
             min_layer, max_layer = detect_layers_from_model(
                 hf_model_name, dry_run=args.dry_run
             )
+            layer_indices = list(range(min_layer, max_layer + 1))
             print(f"  Layers: {min_layer}-{max_layer} (auto-detected)")
+        layer_selector = ",".join(map(str, layer_indices))
 
         if args.local:
             run_local(
                 config=config,
                 model_id=model_id,
                 hf_model_name=hf_model_name,
-                min_layer=min_layer,
-                max_layer=max_layer,
+                layer_indices=layer_indices,
                 project_root=project_root,
                 python_bin=python_bin,
                 dry_run=args.dry_run,
@@ -241,8 +246,7 @@ def main():
                 config=config,
                 model_id=model_id,
                 hf_model_name=hf_model_name,
-                min_layer=min_layer,
-                max_layer=max_layer,
+                layer_selector=layer_selector,
                 project_root=project_root,
                 python_bin=python_bin,
             )
