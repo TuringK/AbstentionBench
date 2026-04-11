@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --output=scripts/logs/extract/%x_%A.out
-#SBATCH --error=scripts/logs/extract/%x_%A.err
+#SBATCH --output=scripts/logs/extract_angular/%x_%A.out
+#SBATCH --error=scripts/logs/extract_angular/%x_%A.err
 
 module load GCC
 module load CUDA/12.4

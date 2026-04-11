@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --output=scripts/logs/extract/%x_%A_%a.out
-#SBATCH --error=scripts/logs/extract/%x_%A_%a.err
+#SBATCH --output=scripts/logs/extract_caa/%x_%A_%a.out
+#SBATCH --error=scripts/logs/extract_caa/%x_%A_%a.err
 
 # Generic SLURM job template for CAA vector extraction.
 # All values are passed via environment variables (CAA_EXT_*)
