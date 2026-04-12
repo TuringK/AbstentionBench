@@ -17,3 +17,9 @@ module:
   steering_vector_path: null  # path to .pt file with steering vector
   steering_layer_idx: null    # layer index to apply steering
   steering_coeff: 1.0         # steering coefficient
+
+  # Angular steering (from angular/extract_angular.py --save_notebook_config)
+  angular_steering_config_path: null
+  angular_degree: 0.0
+  angular_adaptive_mode: 1
+  angular_prompt_only: false

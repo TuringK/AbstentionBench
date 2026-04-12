@@ -15,7 +15,7 @@ import os
 import random
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 import google.generativeai as genai
 import openai
@@ -147,6 +147,11 @@ class VLLMChatModelBase(InferenceModel):
         steering_vector_path: str = None,
         steering_layer_idx: int = None,
         steering_coeff: float = 1.0,
+        # Angular steering (Vu & Nguyen); use *_steering_config.npy from extract_angular
+        angular_steering_config_path: Optional[str] = None,
+        angular_degree: float = 0.0,
+        angular_adaptive_mode: int = 1,
+        angular_prompt_only: bool = False,
     ):
         self.temperature = temperature
         self.top_p = top_p
@@ -159,11 +164,25 @@ class VLLMChatModelBase(InferenceModel):
             skip_special_tokens=skip_special_tokens,
         )
         self.use_system_prompt = use_system_prompt
-        
-        # CAA hooks only work in eager mode
+
+        if steering_vector_path and angular_steering_config_path:
+            raise ValueError(
+                "Cannot use both CAA (steering_vector_path) and Angular (angular_steering_config_path)."
+            )
+
+        # CAA / Angular hooks require eager mode
         if steering_vector_path is not None and not enforce_eager:
             logger.warning("Steering vector provided but enforce_eager=False. Forcing enforce_eager=True.")
             enforce_eager = True
+        if angular_steering_config_path is not None and not enforce_eager:
+            logger.warning(
+                "angular_steering_config_path set but enforce_eager=False. Forcing enforce_eager=True."
+            )
+            enforce_eager = True
+
+        if angular_steering_config_path:
+            # Required for llm.apply_model hook RPC in many vLLM builds
+            os.environ.setdefault("VLLM_ALLOW_INSECURE_SERIALIZATION", "1")
 
         # empty any unused GPU memory
         torch.cuda.empty_cache()
@@ -199,6 +218,18 @@ class VLLMChatModelBase(InferenceModel):
         # apply CAA hook if vector is provided
         if steering_vector_path:
             self._apply_caa_steering(steering_vector_path, steering_layer_idx, steering_coeff)
+
+        self._angular_steering = None
+        if angular_steering_config_path:
+            from recipe.steering.angular import AngularSteering
+
+            self._angular_steering = AngularSteering(self.llm)
+            self._angular_steering.load_config_from_file(angular_steering_config_path)
+            self._angular_steering.apply_steering(
+                target_degree=angular_degree,
+                adaptive_mode=angular_adaptive_mode,
+                prompt_only=angular_prompt_only,
+            )
 
     def _apply_caa_steering(self, vector_path: str, layer_idx: int, coeff: float):
         """
@@ -301,6 +332,13 @@ class VLLMChatModelBase(InferenceModel):
         are created sequentially in the same process.
         """
         logger.info("Cleaning up vLLM model and freeing GPU resources")
+        if getattr(self, "_angular_steering", None) is not None:
+            try:
+                self._angular_steering.remove_steering()
+            except Exception as e:
+                logger.warning("Angular steering cleanup failed: %s", e)
+            self._angular_steering = None
+
         if hasattr(self, '_caa_hook_handle'):
             self._caa_hook_handle.remove()
 
@@ -460,6 +498,10 @@ class OLMo_3_7B_Instruct(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "allenai/Olmo-3-7B-Instruct"
         super().__init__(
@@ -475,6 +517,10 @@ class OLMo_3_7B_Instruct(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )
 
 
@@ -544,6 +590,10 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 
@@ -562,6 +612,10 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )
         
 class Qwen2_5_3B_Instruct(VLLMChatModelBase):
@@ -580,6 +634,10 @@ class Qwen2_5_3B_Instruct(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
 
@@ -598,6 +656,10 @@ class Qwen2_5_3B_Instruct(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )
         
 class Qwen2_5_7B_Instruct(VLLMChatModelBase):
@@ -616,6 +678,10 @@ class Qwen2_5_7B_Instruct(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 
@@ -634,6 +700,10 @@ class Qwen2_5_7B_Instruct(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )
         
 class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
@@ -652,6 +722,10 @@ class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
@@ -670,6 +744,10 @@ class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )
 
 class Gemma_3_1B_Instruct(VLLMChatModelBase):
@@ -688,6 +766,10 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "google/gemma-3-1b-it"
 
@@ -706,6 +788,10 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )
         
 class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
@@ -724,6 +810,10 @@ class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
         steering_vector_path=None,
         steering_layer_idx=None,
         steering_coeff=1.0,
+        angular_steering_config_path=None,
+        angular_degree=0.0,
+        angular_adaptive_mode=1,
+        angular_prompt_only=False,
     ):
         _VLLM_MODEL_NAME = "allenai/Llama-3.1-Tulu-3.1-8B"
         super().__init__(
@@ -740,6 +830,10 @@ class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
             steering_vector_path=steering_vector_path,
             steering_layer_idx=steering_layer_idx,
             steering_coeff=steering_coeff,
+            angular_steering_config_path=angular_steering_config_path,
+            angular_degree=angular_degree,
+            angular_adaptive_mode=angular_adaptive_mode,
+            angular_prompt_only=angular_prompt_only,
         )    
 
 ### REASONING MODELS ###

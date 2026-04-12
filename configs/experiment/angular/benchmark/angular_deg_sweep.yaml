@@ -1,0 +1,30 @@
+name: angular_deg_sweep
+
+# model_id (Hydra ``model=``): subdirectory under ``vector_dir`` (must match ``angular/run_extraction.py`` keys)
+models:
+  qwen2_5_0_5B_instruct: Qwen2_5_0_5B_Instruct
+
+vector_dir: data/vectors_angular
+datasets: "glob(*,exclude=dummy)"
+judge: decay_cpf_sim
+single_job: true
+mode: local
+
+judge_label: DecayCPFSim_judge
+tag: angular_v1
+
+# Companion file: ``{output_filename}`` -> ``*_steering_config.npy`` (see ``extract_angular``)
+angular:
+  output_filename: angular_direction.pt
+
+degrees: [0.0, 15.0, 30.0, 45.0]
+adaptive_mode: 1
+prompt_only: true
+
+slurm:
+  partition: gpu,gpu-h100,gpu-h100-nvl
+  qos: gpu
+  gres: "gpu:1"
+  cpus_per_task: 8
+  mem: "82G"
+  time: "04:00:00"
