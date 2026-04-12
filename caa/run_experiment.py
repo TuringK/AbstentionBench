@@ -11,8 +11,9 @@ Usage:
     # Submit all models
     python caa/run_experiment.py configs/experiment/caa_all.yaml
 
-    # Submit only a specific model
-    python caa/run_experiment.py configs/experiment/caa_all.yaml --model allenai_llama_3_1_tulu_3_1_8B
+    # Submit only a specific model, coeff, and layer(s)
+    python caa/run_experiment.py configs/experiment/caa_all.yaml \\
+        --model allenai_llama_3_1_tulu_3_1_8B --coeffs 1.0 --layers 12
 
 Environment:
     Requires env.sh to be sourced first (sets PROJECT_ROOT, PYTHON_BIN, etc.)
@@ -137,6 +138,15 @@ def main():
         help="Bypass safety net to allow alpha sweeps across all auto-detected layers",
     )
     add_common_cli_args(parser)
+    parser.add_argument(
+        "--coeffs",
+        type=float,
+        nargs="*",
+        default=None,
+        metavar="COEFF",
+        help="Override config caa.coeffs (e.g. --coeffs 1.0). "
+        "If omitted, uses the list from the YAML.",
+    )
     args = parser.parse_args()
 
     # load env vars
@@ -153,7 +163,12 @@ def main():
     # filter models
     models = filter_models(config.models, args.model)
 
-    coeffs_to_sweep = config.caa.coeffs
+    if args.coeffs is not None:
+        if not args.coeffs:
+            parser.error("--coeffs requires at least one value")
+        coeffs_to_sweep = args.coeffs
+    else:
+        coeffs_to_sweep = config.caa.coeffs
 
     for model_id, vector_dir_name in models.items():
         vector_dir = Path(project_root) / config.vector_dir / vector_dir_name
