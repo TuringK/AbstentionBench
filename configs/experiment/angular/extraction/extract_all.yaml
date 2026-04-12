@@ -10,7 +10,7 @@ models:
   Llama3_1_Tulu_3_1_8B: allenai/Llama-3.1-Tulu-3.1-8B
 
 data_path: data/abstention_training_dataset.json
-output_base: /data/vectors_angular
+output_base: data/vectors_angular
 
 extraction:
   use_system_prompt: true
