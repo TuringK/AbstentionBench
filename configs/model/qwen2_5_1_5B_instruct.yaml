@@ -23,3 +23,4 @@ module:
   angular_degree: 0.0
   angular_adaptive_mode: 1
   angular_prompt_only: false
+  angular_prompt_only_strict: true

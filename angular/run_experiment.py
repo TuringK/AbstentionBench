@@ -56,6 +56,8 @@ class ExperimentConfig(BaseModel):
     degrees: list[float] = [30.0]
     adaptive_mode: int = 1
     prompt_only: bool = False
+    # Fail fast if vLLM cannot classify prefill vs decode (recommended for sweeps).
+    prompt_only_strict: bool = True
     slurm: SlurmConfig = SlurmConfig()
 
     @field_validator("models", mode="before")
@@ -96,6 +98,7 @@ def build_sbatch_command(
         "ANG_EXP_DEGREE": str(degree),
         "ANG_EXP_ADAPTIVE_MODE": str(config.adaptive_mode),
         "ANG_EXP_PROMPT_ONLY": "1" if config.prompt_only else "0",
+        "ANG_EXP_PROMPT_ONLY_STRICT": "true" if config.prompt_only_strict else "false",
         "ANG_EXP_PYTHON_BIN": str(python_bin),
         "ANG_EXP_USER_EMAIL": str(user_email),
     }

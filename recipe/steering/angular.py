@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -21,17 +21,33 @@ import torch.nn as nn
 
 logger = logging.getLogger(__name__)
 
+_DIRECTION_EPS = 1e-12
+
 
 class AngularSteeringOperator:
     """Applies the Angular rotation in the (u1, u2) plane on hidden states."""
 
     def __init__(self, first_direction: np.ndarray, second_direction: np.ndarray):
-        self.first_direction = torch.from_numpy(first_direction).float()
-        self.second_direction = torch.from_numpy(second_direction).float()
+        self.first_direction = torch.from_numpy(np.asarray(first_direction)).float()
+        self.second_direction = torch.from_numpy(np.asarray(second_direction)).float()
 
-        self.b1 = self.first_direction / self.first_direction.norm()
-        self.b2 = self.second_direction - (self.second_direction @ self.b1) * self.b1
-        self.b2 = self.b2 / self.b2.norm()
+        if not torch.isfinite(self.first_direction).all() or not torch.isfinite(
+            self.second_direction
+        ).all():
+            raise ValueError("first_direction and second_direction must be finite")
+
+        n1 = self.first_direction.norm()
+        if n1 < _DIRECTION_EPS:
+            raise ValueError("first_direction has near-zero norm; cannot build steering basis")
+
+        self.b1 = self.first_direction / n1
+        b2_raw = self.second_direction - (self.second_direction @ self.b1) * self.b1
+        n2 = b2_raw.norm()
+        if n2 < _DIRECTION_EPS:
+            raise ValueError(
+                "second_direction is collinear with first_direction; cannot form a 2D steering plane"
+            )
+        self.b2 = b2_raw / n2
 
         self.proj_matrix = torch.outer(self.b1, self.b1) + torch.outer(self.b2, self.b2)
 
@@ -104,7 +120,8 @@ class AngularSteeringOperator:
 def _detect_prefill_decode_phase(
     hidden_states: torch.Tensor,
     layer_name: str,
-) -> bool:
+) -> Optional[bool]:
+    """Return True if decode step, False if prefill, None if unknown."""
     try:
         from vllm.forward_context import get_forward_context
 
@@ -116,21 +133,23 @@ def _detect_prefill_decode_phase(
         else:
             attn_meta = attn_metadata
 
-        if attn_meta is not None:
-            max_query_len = getattr(attn_meta, "max_query_len", None)
-            if max_query_len is not None:
-                return max_query_len == 1
+        if attn_meta is None:
+            return None
 
-            if hasattr(attn_meta, "num_decode_tokens"):
-                return attn_meta.num_decode_tokens > 0
+        max_query_len = getattr(attn_meta, "max_query_len", None)
+        if max_query_len is not None:
+            return max_query_len == 1
 
-            if hasattr(attn_meta, "num_prefill_tokens"):
-                return attn_meta.num_prefill_tokens == 0
+        if hasattr(attn_meta, "num_decode_tokens"):
+            return attn_meta.num_decode_tokens > 0
+
+        if hasattr(attn_meta, "num_prefill_tokens"):
+            return attn_meta.num_prefill_tokens == 0
 
     except Exception as e:
         logger.debug("Metadata detection failed for %s: %s", layer_name, e)
 
-    return False
+    return None
 
 
 def create_steering_hook(
@@ -140,14 +159,12 @@ def create_steering_hook(
     prompt_only: bool = False,
 ) -> Callable[..., Any]:
     _layer_name = layer_name
-    _initial_operator = operator
 
     def hook_fn(module, input_tuple, output):
-        import builtins
-
         target_degree = state.get("target_degree", 0.0)
         adaptive_mode = state.get("adaptive_mode", 1)
         enabled = state.get("enabled", True)
+        prompt_only_strict = state.get("prompt_only_strict", True)
 
         if not enabled:
             return output
@@ -160,18 +177,25 @@ def create_steering_hook(
             rest = None
 
         if prompt_only:
-            is_decode = _detect_prefill_decode_phase(hidden_states, _layer_name)
-            if is_decode:
+            phase = _detect_prefill_decode_phase(hidden_states, _layer_name)
+            if phase is True:
                 return output
+            if phase is None and prompt_only_strict:
+                raise RuntimeError(
+                    "Angular steering prompt_only=True but prefill/decode phase could not be "
+                    "determined from vLLM attention metadata. Refusing to run: this would "
+                    "silently match all-token steering. Set prompt_only_strict=False only if "
+                    "you accept that risk, or fix the vLLM/backend version."
+                )
 
-        current_operator = getattr(builtins, "_steering_operator", _initial_operator)
-
+        operators: List[AngularSteeringOperator] = state.get("operators", [operator])
         last_theta = state.get("last_theta", None)
         if last_theta is not None and last_theta != target_degree:
-            current_operator.clear_rotation_cache()
+            for op in operators:
+                op.clear_rotation_cache()
         state["last_theta"] = target_degree
 
-        steered = current_operator.steer(
+        steered = operator.steer(
             hidden_states=hidden_states,
             target_degree=target_degree,
             adaptive_mode=adaptive_mode,
@@ -184,13 +208,40 @@ def create_steering_hook(
     return hook_fn
 
 
-def clear_hooks(model: nn.Module) -> int:
+def _remove_angular_hook_handles() -> int:
+    import builtins
+
     count = 0
-    for module in model.modules():
-        if hasattr(module, "_forward_hooks") and module._forward_hooks:
-            count += len(module._forward_hooks)
-            module._forward_hooks.clear()
+    handles = getattr(builtins, "_angular_steering_hook_handles", None)
+    if not handles:
+        return 0
+    for h in handles:
+        try:
+            h.remove()
+            count += 1
+        except Exception:
+            pass
+    builtins._angular_steering_hook_handles = []
     return count
+
+
+def _validate_hook_registration_results(results: Any, expected: int) -> None:
+    """Ensure every vLLM worker registered exactly ``expected`` hooks."""
+    if results is None:
+        raise RuntimeError("Angular steering: llm.apply_model returned None (expected hook count)")
+    if isinstance(results, list):
+        bad = [(i, r) for i, r in enumerate(results) if r != expected]
+        if bad:
+            i, r = bad[0]
+            raise RuntimeError(
+                f"Angular steering: worker {i} registered {r} hooks but expected {expected}. "
+                "Module names in the steering config likely do not match this model."
+            )
+        return
+    if results != expected:
+        raise RuntimeError(
+            f"Angular steering: registered {results} hooks but expected {expected}."
+        )
 
 
 def _layer_config_to_directions(config: Dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
@@ -240,6 +291,7 @@ class AngularSteering:
         target_degree: float = 0.0,
         adaptive_mode: int = 1,
         prompt_only: bool = False,
+        prompt_only_strict: bool = True,
     ) -> Dict[str, Any]:
         if not self.steering_configs:
             raise ValueError("No steering configurations loaded. Call load_config_from_file() first.")
@@ -248,12 +300,14 @@ class AngularSteering:
         self._adaptive_mode = adaptive_mode
         self._enabled = True
 
-        first_layer_name = next(iter(self.steering_configs))
-        shared_operator = self.steering_configs[first_layer_name]
         target_layers = list(self.steering_configs.keys())
+        expected_hooks = len(target_layers)
+        operators_list = [self.steering_configs[name] for name in target_layers]
 
         def register_hooks_fn(model: nn.Module) -> int:
             import builtins
+
+            _remove_angular_hook_handles()
 
             if not hasattr(builtins, "_steering_state"):
                 builtins._steering_state = {}
@@ -263,36 +317,45 @@ class AngularSteering:
             builtins._steering_state["enabled"] = True
             builtins._steering_state["is_first_pass"] = True
             builtins._steering_state["last_theta"] = None
-            builtins._steering_operator = shared_operator
+            builtins._steering_state["operators"] = operators_list
+            builtins._steering_state["prompt_only_strict"] = prompt_only_strict
 
-            clear_hooks(model)
-
-            count = 0
             module_dict = dict(model.named_modules())
+            missing = [name for name in target_layers if name not in module_dict]
+            if missing:
+                sample = missing[:12]
+                extra = f" (+{len(missing) - 12} more)" if len(missing) > 12 else ""
+                raise RuntimeError(
+                    f"Angular steering: {len(missing)} module(s) not found in model: {sample}{extra}"
+                )
 
+            handles = []
             for layer_name in target_layers:
-                if layer_name in module_dict:
-                    module = module_dict[layer_name]
-                    hook = create_steering_hook(
-                        operator=shared_operator,
-                        state=builtins._steering_state,
-                        layer_name=layer_name,
-                        prompt_only=prompt_only,
-                    )
-                    module.register_forward_hook(hook)
-                    count += 1
+                module = module_dict[layer_name]
+                op = self.steering_configs[layer_name]
+                hook = create_steering_hook(
+                    operator=op,
+                    state=builtins._steering_state,
+                    layer_name=layer_name,
+                    prompt_only=prompt_only,
+                )
+                handles.append(module.register_forward_hook(hook))
 
-            return count
+            builtins._angular_steering_hook_handles = handles
+            return len(handles)
 
         results = self.llm.apply_model(register_hooks_fn)
+        _validate_hook_registration_results(results, expected_hooks)
         self.hooks_registered = True
 
         logger.info(
-            "Registered Angular steering hooks: %s (degree=%s, adaptive_mode=%s, prompt_only=%s)",
+            "Registered Angular steering hooks: %s (degree=%s, adaptive_mode=%s, prompt_only=%s, "
+            "prompt_only_strict=%s)",
             results,
             target_degree,
             adaptive_mode,
             prompt_only,
+            prompt_only_strict,
         )
         return {"hooks_registered": results}
 
@@ -328,7 +391,7 @@ class AngularSteering:
 
     def remove_steering(self) -> None:
         def remove_hooks_fn(model: nn.Module) -> int:
-            return clear_hooks(model)
+            return _remove_angular_hook_handles()
 
         count = self.llm.apply_model(remove_hooks_fn)
         self.hooks_registered = False

@@ -12,12 +12,16 @@ module load CUDA/12.4
 export HYDRA_FULL_ERROR=1
 export VLLM_ALLOW_INSECURE_SERIALIZATION=1
 
+# Default: fail fast if prefill/decode cannot be inferred (safe for sweeps)
+ANG_EXP_PROMPT_ONLY_STRICT="${ANG_EXP_PROMPT_ONLY_STRICT:-true}"
+
 echo "=== Angular benchmark ==="
 echo "Model:   ${ANG_EXP_MODEL_ID}"
 echo "Config:  ${ANG_EXP_STEERING_CONFIG}"
 echo "Degree:  ${ANG_EXP_DEGREE}"
 echo "Adapt:   ${ANG_EXP_ADAPTIVE_MODE}"
 echo "Prompt-only: ${ANG_EXP_PROMPT_ONLY}"
+echo "Prompt-only strict: ${ANG_EXP_PROMPT_ONLY_STRICT}"
 echo "========================="
 
 COMMON_DIR="${ANG_EXP_COMMON_DIR_BASE}/"
@@ -34,4 +38,5 @@ env -u SLURM_MEM_PER_CPU -u SLURM_MEM_PER_NODE -u SLURM_MEM_PER_GPU \
     module.angular_degree="${ANG_EXP_DEGREE}" \
     module.angular_adaptive_mode="${ANG_EXP_ADAPTIVE_MODE}" \
     module.angular_prompt_only="${ANG_EXP_PROMPT_ONLY}" \
+    module.angular_prompt_only_strict="${ANG_EXP_PROMPT_ONLY_STRICT}" \
     ${ANG_EXP_EMAIL_ARGS}

@@ -20,6 +20,8 @@ angular:
 degrees: [0.0, 15.0, 30.0, 45.0]
 adaptive_mode: 1
 prompt_only: true
+# Require vLLM prefill/decode metadata; fail fast if unknown (avoids silent all-token steering)
+prompt_only_strict: true
 
 slurm:
   partition: gpu,gpu-h100,gpu-h100-nvl

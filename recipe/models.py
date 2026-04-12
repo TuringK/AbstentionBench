@@ -152,6 +152,7 @@ class VLLMChatModelBase(InferenceModel):
         angular_degree: float = 0.0,
         angular_adaptive_mode: int = 1,
         angular_prompt_only: bool = False,
+        angular_prompt_only_strict: bool = True,
     ):
         self.temperature = temperature
         self.top_p = top_p
@@ -229,6 +230,7 @@ class VLLMChatModelBase(InferenceModel):
                 target_degree=angular_degree,
                 adaptive_mode=angular_adaptive_mode,
                 prompt_only=angular_prompt_only,
+                prompt_only_strict=angular_prompt_only_strict,
             )
 
     def _apply_caa_steering(self, vector_path: str, layer_idx: int, coeff: float):
@@ -502,6 +504,7 @@ class OLMo_3_7B_Instruct(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "allenai/Olmo-3-7B-Instruct"
         super().__init__(
@@ -521,6 +524,7 @@ class OLMo_3_7B_Instruct(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )
 
 
@@ -594,6 +598,7 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 
@@ -616,8 +621,9 @@ class Qwen2_5_1_5B_Instruct(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )
-        
+
 class Qwen2_5_3B_Instruct(VLLMChatModelBase):
     def __init__(
         self,
@@ -638,6 +644,7 @@ class Qwen2_5_3B_Instruct(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
 
@@ -660,6 +667,7 @@ class Qwen2_5_3B_Instruct(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )
         
 class Qwen2_5_7B_Instruct(VLLMChatModelBase):
@@ -682,6 +690,7 @@ class Qwen2_5_7B_Instruct(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-7B-Instruct"
 
@@ -704,6 +713,7 @@ class Qwen2_5_7B_Instruct(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )
         
 class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
@@ -726,6 +736,7 @@ class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
 
@@ -748,6 +759,7 @@ class Qwen2_5_0_5B_Instruct(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )
 
 class Gemma_3_1B_Instruct(VLLMChatModelBase):
@@ -770,6 +782,7 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "google/gemma-3-1b-it"
 
@@ -792,6 +805,7 @@ class Gemma_3_1B_Instruct(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )
         
 class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
@@ -814,6 +828,7 @@ class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
         angular_degree=0.0,
         angular_adaptive_mode=1,
         angular_prompt_only=False,
+        angular_prompt_only_strict=True,
     ):
         _VLLM_MODEL_NAME = "allenai/Llama-3.1-Tulu-3.1-8B"
         super().__init__(
@@ -834,6 +849,7 @@ class Allenai_Llama_3_1_Tulu_3_1_8B(VLLMChatModelBase):
             angular_degree=angular_degree,
             angular_adaptive_mode=angular_adaptive_mode,
             angular_prompt_only=angular_prompt_only,
+            angular_prompt_only_strict=angular_prompt_only_strict,
         )    
 
 ### REASONING MODELS ###
