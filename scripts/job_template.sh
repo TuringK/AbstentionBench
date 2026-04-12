@@ -11,6 +11,7 @@ module load GCC
 module load CUDA/12.4
 
 export VLLM_USE_V1=0
+export HYDRA_FULL_ERROR=1
 
 # Resolve paths for this array task
 LAYER_IDX="${SLURM_ARRAY_TASK_ID}"
