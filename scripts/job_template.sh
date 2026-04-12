@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#SBATCH --output=scripts/logs/%x_%A_%a.out
-#SBATCH --error=scripts/logs/%x_%A_%a.err
+#SBATCH --output=scripts/logs/run_caa/%x_%A_%a.out
+#SBATCH --error=scripts/logs/run_caa/%x_%A_%a.err
 
 # Generic SLURM job template for CAA experiments.
 # All experiment-specific values are passed via environment
