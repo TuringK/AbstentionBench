@@ -1,0 +1,42 @@
+# Recovery slice for `caa_v3_all_sweep.yaml` after a mid-sweep HPC failure.
+#
+# Stated resume point: Qwen2_5_7B_Instruct, coeff 6.0, layer 18+ (inclusive of 18),
+# and everything after that in the original sweep order (Gemma, Llama full sweeps).
+# Models 0.5B / 1.5B / 3B and Qwen 7B for coeffs 1.0–5.0 and coeff 6.0 layers < 18
+# are treated as already finished — do not list them here so they are never resubmitted.
+#
+# Submit the remaining work with:
+#   bash scripts/run_caa_v3_sweep_recovery.sh
+# (after `source env.sh`), or use the same CLI overrides against this file.
+#
+# Upper bound in Qwen2.5-7B partial layer run: default 18–27 (28-layer model, last
+# index 27). If your vector set stops earlier/later, match it to
+# `detect_layers_from_vectors` (or run a dry run without --layers to print the
+# auto range, then set --layers min-max accordingly).
+
+name: caa_v3_all_sweep_recovery
+
+models:
+  qwen2_5_7B_instruct: Qwen2_5_7B_Instruct
+  gemma_3_1B_instruct: Gemma3_1B_Instruct
+  allenai_llama_3_1_tulu_3_1_8B: Llama3_1_Tulu_3_1_8B
+
+vector_dir: "data/vectors_caa_v3"
+datasets: "glob(*,exclude=dummy)"
+judge: decay_cpf_sim
+single_job: true
+mode: local
+
+judge_label: DecayCPFSim_judge
+tag: v3_sweep
+
+caa:
+  coeffs: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+slurm:
+  partition: gpu,gpu-h100,gpu-h100-nvl
+  qos: gpu
+  gres: "gpu:1"
+  cpus_per_task: 8
+  mem: "82G"
+  time: "04:00:00"
