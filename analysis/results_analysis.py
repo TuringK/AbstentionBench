@@ -2,11 +2,27 @@ import os
 import argparse
 import pandas as pd
 import contextlib
+import json
+import sys
 
 with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
-    from analysis.load_results import Results
-    
-from analysis.tables import AbstentionF1ScoreTable
+    # NOTE: these imports can pull in heavyweight optional dependencies (e.g. vllm).
+    # keep them lazy so utilities like training-data filtering can be unit-tested
+    # and used in lightweight environments.
+    Results = None
+    AbstentionF1ScoreTable = None
+
+
+def _lazy_import_analysis_components():
+    global Results, AbstentionF1ScoreTable
+    if Results is None:
+        from analysis.load_results import Results as _Results
+
+        Results = _Results
+    if AbstentionF1ScoreTable is None:
+        from analysis.tables import AbstentionF1ScoreTable as _Table
+
+        AbstentionF1ScoreTable = _Table
 
 
 def parse_args():
@@ -24,8 +40,9 @@ Examples:
   # Steering sweep mode (with ranges and individual vectors)
   python results_analysis.py --steering-dir data/vectors --vector-indices 1 2 5-10 --output sweep.xlsx
 
-  # Filter training data
+  # Filter training overlap CSV or JSON array training file
   python results_analysis.py --results-dir data/results --filter-training --training-data data/sample_pairs.csv
+  python results_analysis.py --results-dir data/results --filter-training --training-data data/abstention_training_dataset.json
 
   # Exclude specific datasets
   python results_analysis.py --results-dir data/results --exclude-datasets WorldSense MoralChoice
@@ -57,13 +74,20 @@ Examples:
     parser.add_argument(
         "--filter-training",
         action="store_true",
-        help="Filter out questions present in training data."
+        help=(
+            "Drop benchmark rows whose prompt matches training text after whitespace "
+            "normalisation. JSON training counts every row with a non-empty question "
+            "field. Labels such as should_abstain do not change overlap."
+        ),
     )
     parser.add_argument(
         "--training-data",
         type=str,
         default="data/sample_pairs.csv",
-        help="Path to training data CSV file (default: data/sample_pairs.csv)."
+        help=(
+            "Training file path CSV with a question column or JSON array (.json / .jsonl). "
+            "Default data/sample_pairs.csv."
+        ),
     )
     parser.add_argument(
         "--exclude-datasets",
@@ -142,40 +166,109 @@ def parse_vector_indices(indices_args, steering_dir=None):
 
 
 def normalise_text(text):
-    """
-    Normalises text by removing all whitespace characters.
+    """Collapse internal whitespace for stable overlap checks between prompts.
+
+    Values that are not strings become empty strings so missing cells never match
+    string forms such as None or nan from coercion bugs.
     """
     if not isinstance(text, str):
-        return str(text)
+        return ""
     return "".join(text.split())
 
-def filter_training_data(df: pd.DataFrame, training_data_path: str, debug: bool = False) -> pd.DataFrame:
-    """
-    Filters out questions from the dataframe that are present in the training data.
-    
-    Args:
-        df: DataFrame containing the results.
-        training_data_path: Path to the CSV file containing training data.
-        debug: If True, print detailed debug information.
-        
+
+def _load_training_questions(training_data_path: str) -> tuple[list[str], str]:
+    """Load question strings from CSV pairs or from the JSON training array format.
+
+    CSV files must include a question column. Missing cells are dropped. Other columns
+    are ignored.
+
+    JSON uses json.load on the whole file. The root must be a list of objects. Objects
+    without a question key are skipped. Whitespace-only strings are skipped.
+
+    Extensions .json and .jsonl both use this path and match the extractor convention
+    for a single JSON array document.
+
     Returns:
-        DataFrame with training data removed.
+        Tuple of question list and format tag csv or json.
     """
+    _, ext = os.path.splitext(training_data_path)
+    ext = ext.lower()
+
+    if ext in {".json", ".jsonl"}:
+        with open(training_data_path) as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            raise ValueError(
+                f"Training JSON must be a list of examples, got {type(data)}"
+            )
+        questions = [d.get("question") for d in data if isinstance(d, dict)]
+        questions = [q for q in questions if isinstance(q, str) and q.strip()]
+        return questions, "json"
+
+    # default: CSV
     training_df = pd.read_csv(training_data_path)
-    
-    training_questions_raw = training_df['question'].unique()
-    print(f"Training data: {len(training_df)} rows, {len(training_questions_raw)} unique questions")
-    
+    if "question" not in training_df.columns:
+        raise ValueError(
+            f"Training CSV must contain a 'question' column. Columns: {list(training_df.columns)}"
+        )
+    questions = training_df["question"].dropna().astype(str).tolist()
+    return questions, "csv"
+
+
+def _get_results_question_column(df: pd.DataFrame) -> str:
+    """Return the first present prompt column name in a fixed preference order."""
+    for candidate in ["prompt_question", "question", "prompt", "prompt_text"]:
+        if candidate in df.columns:
+            return candidate
+    raise ValueError(
+        "Results dataframe does not contain a recognisable question column. "
+        f"Tried: prompt_question/question/prompt/prompt_text. Columns: {list(df.columns)}"
+    )
+
+def filter_training_data(df: pd.DataFrame, training_data_path: str, debug: bool = False) -> pd.DataFrame:
+    """Drop rows whose prompt matches any normalised training question string.
+
+    Prompt column detection follows prompt_question then question then prompt then
+    prompt_text.
+
+    Matching uses normalise_text on both sides so spacing differences alone do not miss
+    overlap.
+
+    Rows whose prompt cell is missing or not a string normalise to empty and stay unless
+    empty appears among normalised training strings.
+
+    Args:
+        df: Results table before aggregation output.
+        training_data_path: CSV or JSON array training file same formats as --training-data.
+        debug: Print row counts and duplicate hints when True.
+
+    Returns:
+        Copy of df without overlapping prompt rows.
+    """
+    questions, fmt = _load_training_questions(training_data_path)
+    training_questions_raw = pd.Series(questions, dtype="string")
+
+    print(
+        f"Training data: {training_data_path} ({fmt}), "
+        f"{len(questions)} rows, {training_questions_raw.nunique()} unique questions"
+    )
+
     # normalise
-    training_data_normalised = set(training_df['question'].apply(normalise_text))
-    print(f"Training data after normalisation: {len(training_data_normalised)} unique normalised questions")
-    
+    training_data_normalised = set(training_questions_raw.apply(normalise_text))
+    print(
+        f"Training data after normalisation: {len(training_data_normalised)} unique normalised questions"
+    )
+
     # check if normalisation reduced unique count (indicates collisions)
-    if len(training_data_normalised) < len(training_questions_raw):
-        print(f"WARNING: Normalisation reduced unique questions by {len(training_questions_raw) - len(training_data_normalised)}")
-    
+    if len(training_data_normalised) < training_questions_raw.nunique():
+        print(
+            "WARNING: Normalisation reduced unique questions by "
+            f"{training_questions_raw.nunique() - len(training_data_normalised)}"
+        )
+
     # filter
-    df['prompt_question_normalised'] = df['prompt_question'].apply(normalise_text)
+    results_q_col = _get_results_question_column(df)
+    df["prompt_question_normalised"] = df[results_q_col].apply(normalise_text)
     
     # debug: check for duplicates in benchmark data
     if debug:
@@ -203,7 +296,12 @@ def filter_training_data(df: pd.DataFrame, training_data_path: str, debug: bool 
         
         # breakdown by dataset
         print(f"\nFiltered rows by dataset:")
-        print(matched_rows.groupby('dataset_name')['prompt_question'].count().to_string())
+        # 'dataset_name' exists on Results, but guard for other tables
+        group_col = 'dataset_name' if 'dataset_name' in matched_rows.columns else None
+        if group_col:
+            print(matched_rows.groupby(group_col)[results_q_col].count().to_string())
+        else:
+            print(matched_rows[results_q_col].count())
     
     initial_len = len(df)
     filtered_df = df[~matches_mask].copy()
@@ -244,8 +342,8 @@ def process_results_dir(
     
     Args:
         results_dir: Directory containing the results.
-        filter_training: Whether to filter out training data.
-        training_data_path: Path to the training data CSV file.
+        filter_training: Whether to drop training overlaps via filter_training_data.
+        training_data_path: CSV or JSON training file path for overlap filtering.
         excluded_datasets: List of datasets to exclude.
         included_datasets: List of datasets to specifically include.
         
@@ -253,6 +351,8 @@ def process_results_dir(
         DataFrame containing the results table.
     """
     print(f"\nProcessing results in {results_dir}...\n")
+
+    _lazy_import_analysis_components()
 
     # r = Results(
     #     base_results_dir=results_dir,
@@ -357,8 +457,8 @@ def process_steering_results(
     Args:
         base_dir: Base directory containing subdirectories for each vector index.
         vector_indices: List of vector indices to process.
-        filter_training: Whether to filter out training data.
-        training_data_path: Path to the training data CSV file.
+        filter_training: Whether to drop training overlaps via filter_training_data.
+        training_data_path: CSV or JSON training file path for overlap filtering.
         excluded_datasets: List of datasets to exclude.
         included_datasets: List of datasets to specifically include.
         output_path: Output file path for saving results.
