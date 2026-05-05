@@ -7,21 +7,20 @@
 #
 # Edit MODELS and COEFFS below as needed.
 #
-# Usage:
+# Usage (after: source env.sh - PROJECT_ROOT must be set):
 #   ./scripts/run_results_analysis_v3.sh
 #
-# Optional env overrides:
+# Optional env overrides (absolute paths, or under PROJECT_ROOT):
 #   PYTHON_CMD=python3
-#   RESULTS_PARENT=data/new_dataset_exps
-#   OUTPUT_ROOT=data/v3_csv
-#   TRAINING_DATA=data/abstention_training_dataset.json
+#   RESULTS_PARENT   default ${PROJECT_ROOT}/data/new_dataset_exps
+#   OUTPUT_ROOT      default ${PROJECT_ROOT}/data/v3_csv
+#   TRAINING_DATA    default ${PROJECT_ROOT}/data/abstention_training_dataset.json
 #   DATASET=rulebreakers
 #   DRY_RUN=1
 #
 # Slurm array mode:
-#   cd /path/to/AbstentionBench   # required: sbatch cwd becomes SLURM_SUBMIT_DIR
-#   sbatch --array=1-N%20 scripts/run_results_analysis_v3.sh
-#   (each task handles one model+coeff combo)
+#   ./scripts/submit_results_analysis_v3.sh   # passes absolute log paths + array script path
+#   Uses exported PROJECT_ROOT (submit script uses --export=ALL).
 #
 #SBATCH --output=scripts/logs/batch_results_analysis/%x_%A_%a.out
 #SBATCH --error=scripts/logs/batch_results_analysis/%x_%A_%a.err
@@ -31,18 +30,12 @@
 
 set -euo pipefail
 
-if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-  REPO_ROOT="${SLURM_SUBMIT_DIR}"
-else
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-fi
-cd "${REPO_ROOT}"
+: "${PROJECT_ROOT:?source env.sh first - PROJECT_ROOT must be exported}"
 
 PYTHON_CMD="${PYTHON_CMD:-${PYTHON_BIN:-python}}"
-RESULTS_PARENT="${RESULTS_PARENT:-data/new_dataset_exps}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-data/v3_csv}"
-TRAINING_DATA="${TRAINING_DATA:-data/abstention_training_dataset.json}"
+RESULTS_PARENT="${RESULTS_PARENT:-${PROJECT_ROOT}/data/new_dataset_exps}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-${PROJECT_ROOT}/data/v3_csv}"
+TRAINING_DATA="${TRAINING_DATA:-${PROJECT_ROOT}/data/abstention_training_dataset.json}"
 DATASET="${DATASET:-rulebreakers}"
 DRY_RUN="${DRY_RUN:-0}"
 
@@ -83,17 +76,7 @@ run_one_combo() {
   dir_prefix="${model_spec%%|*}"
   out_prefix="${model_spec##*|}"
   out_dir="${OUTPUT_ROOT}/${out_prefix}_sweep"
-  if [[ -e "${out_dir}" && ! -d "${out_dir}" ]]; then
-    echo "error: output path exists but is not a directory: ${out_dir}" >&2
-    return 1
-  fi
-  if [[ ! -d "${out_dir}" ]]; then
-    mkdir -p "${out_dir}"
-  fi
-  if [[ ! -w "${out_dir}" ]]; then
-    echo "error: output directory is not writable: ${out_dir}" >&2
-    return 1
-  fi
+  mkdir -p "${out_dir}"
 
   steering_dir="${RESULTS_PARENT}/${dir_prefix}_coeff_${coeff}_v3_sweep"
 
@@ -104,7 +87,7 @@ run_one_combo() {
 
   # Single pass: everything except rulebreakers
   out_exclude="${out_dir}/${out_prefix}_v3_sweep_${coeff}.csv"
-  run_cmd "${PYTHON_CMD}" analysis/results_analysis.py \
+  run_cmd "${PYTHON_CMD}" "${PROJECT_ROOT}/analysis/results_analysis.py" \
     --steering-dir "${steering_dir}" \
     --filter-training \
     --training-data "${TRAINING_DATA}" \
