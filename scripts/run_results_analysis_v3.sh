@@ -19,6 +19,7 @@
 #   DRY_RUN=1
 #
 # Slurm array mode:
+#   cd /path/to/AbstentionBench   # required: sbatch cwd becomes SLURM_SUBMIT_DIR
 #   sbatch --array=1-N%20 scripts/run_results_analysis_v3.sh
 #   (each task handles one model+coeff combo)
 #
@@ -30,8 +31,12 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+  REPO_ROOT="${SLURM_SUBMIT_DIR}"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+fi
 cd "${REPO_ROOT}"
 
 PYTHON_CMD="${PYTHON_CMD:-${PYTHON_BIN:-python}}"
