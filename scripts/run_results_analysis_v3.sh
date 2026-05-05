@@ -78,7 +78,17 @@ run_one_combo() {
   dir_prefix="${model_spec%%|*}"
   out_prefix="${model_spec##*|}"
   out_dir="${OUTPUT_ROOT}/${out_prefix}_sweep"
-  mkdir -p "${out_dir}"
+  if [[ -e "${out_dir}" && ! -d "${out_dir}" ]]; then
+    echo "error: output path exists but is not a directory: ${out_dir}" >&2
+    return 1
+  fi
+  if [[ ! -d "${out_dir}" ]]; then
+    mkdir -p "${out_dir}"
+  fi
+  if [[ ! -w "${out_dir}" ]]; then
+    echo "error: output directory is not writable: ${out_dir}" >&2
+    return 1
+  fi
 
   steering_dir="${RESULTS_PARENT}/${dir_prefix}_coeff_${coeff}_v3_sweep"
 
