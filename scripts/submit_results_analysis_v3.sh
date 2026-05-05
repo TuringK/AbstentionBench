@@ -25,7 +25,14 @@ if ! [[ "${NUM_TASKS}" =~ ^[0-9]+$ ]] || [[ "${NUM_TASKS}" -lt 1 ]]; then
   exit 1
 fi
 
+# Concurrency cap cannot exceed total number of tasks.
+if [[ "${MAX_PARALLEL}" -gt "${NUM_TASKS}" ]]; then
+  MAX_PARALLEL="${NUM_TASKS}"
+fi
+
 mkdir -p scripts/logs/batch_results_analysis
 
+echo "Tasks: ${NUM_TASKS}"
+echo "Max parallel: ${MAX_PARALLEL}"
 echo "Submitting array: 1-${NUM_TASKS}%${MAX_PARALLEL}"
 exec sbatch --array="1-${NUM_TASKS}%${MAX_PARALLEL}" "${JOB_SCRIPT}"

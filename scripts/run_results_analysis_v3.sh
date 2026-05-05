@@ -3,8 +3,7 @@
 # Minimal results analysis runner:
 # - loop over model prefixes
 # - loop over coeffs
-# - run exclude-rulebreakers pass
-# - run include-only-rulebreakers pass
+# - run one pass excluding rulebreakers
 #
 # Edit MODELS and COEFFS below as needed.
 #
@@ -21,7 +20,7 @@
 #
 # Slurm array mode:
 #   sbatch --array=1-N%20 scripts/run_results_analysis_v3.sh
-#   (each task handles one model+coeff combo and runs both passes)
+#   (each task handles one model+coeff combo)
 #
 #SBATCH --output=scripts/logs/batch_results_analysis/%x_%A_%a.out
 #SBATCH --error=scripts/logs/batch_results_analysis/%x_%A_%a.err
@@ -88,7 +87,7 @@ run_one_combo() {
     return 0
   fi
 
-  # Pass 1: everything except rulebreakers
+  # Single pass: everything except rulebreakers
   out_exclude="${out_dir}/${out_prefix}_v3_sweep_${coeff}.csv"
   run_cmd "${PYTHON_CMD}" analysis/results_analysis.py \
     --steering-dir "${steering_dir}" \
@@ -96,15 +95,6 @@ run_one_combo() {
     --training-data "${TRAINING_DATA}" \
     --exclude-datasets "${DATASET}" \
     --output "${out_exclude}"
-
-  # Pass 2: rulebreakers only
-  out_include="${out_dir}/${out_prefix}_v3_sweep_${coeff}_${DATASET}.csv"
-  run_cmd "${PYTHON_CMD}" analysis/results_analysis.py \
-    --steering-dir "${steering_dir}" \
-    --filter-training \
-    --training-data "${TRAINING_DATA}" \
-    --include-datasets "${DATASET}" \
-    --output "${out_include}"
 }
 
 if [[ -n "${SLURM_ARRAY_TASK_ID:-}" ]]; then
