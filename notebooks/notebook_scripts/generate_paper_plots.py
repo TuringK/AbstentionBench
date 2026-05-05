@@ -1,10 +1,12 @@
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import seaborn as sns
 from pathlib import Path
 from typing import Union, Optional, List, Dict
 
+from .best_combinations import best_combinations
 from .summarize_metrics import filter_incomplete_layers, steering_results_csv_path
 
 
@@ -14,6 +16,7 @@ def process_csv(path: Path, model_name: str, coeff: float, all_data: List):
 
     df = pd.read_csv(path)
     df = filter_incomplete_layers(df)
+
     if df.empty:
         return
 
@@ -104,11 +107,13 @@ def generate_plots(
         plt.ylabel("Steering Coefficient")
         plt.xlabel("Layer Index")
         plt.tight_layout()
+
         if save and output_dir:
             plt.savefig(
-                output_dir / f"heatmap_{model.replace(' ', '_')}.png",
+                output_dir / f"heatmap_{model.replace(' ', '_').replace('.', '_')}.png",
                 bbox_inches="tight",
             )
+
         plt.show()
 
     # f1 trajectory
@@ -146,7 +151,7 @@ def generate_plots(
     ax = plt.gca()
     ax.xaxis.set_major_formatter(ticker.ScalarFormatter())
 
-    # Optional: adjust x ticks depending on available coeffs
+    # adjust x ticks depending on available coeffs
     actual_coeffs = sorted(df_all["coeff"].unique())
     ax.set_xticks(actual_coeffs)
 
@@ -160,9 +165,12 @@ def generate_plots(
         frameon=True,
         edgecolor="black",
     )
+
     plt.tight_layout()
+
     if save and output_dir:
         plt.savefig(output_dir / "f1_trajectory_best_layer.png", bbox_inches="tight")
+
     plt.show()
 
     # pr trade-off
@@ -186,6 +194,7 @@ def generate_plots(
         pareto = []
         for i, row1 in subset.iterrows():
             dominated = False
+
             for j, row2 in subset.iterrows():
                 if (
                     row2["recall"] >= row1["recall"]
@@ -196,6 +205,7 @@ def generate_plots(
                 ):
                     dominated = True
                     break
+
             if not dominated:
                 pareto.append(row1)
 
@@ -222,59 +232,135 @@ def generate_plots(
         plt.savefig(output_dir / "pr_tradeoff_pareto.png", bbox_inches="tight")
     plt.show()
 
-    # best f1 vs scale
-    print("Generating F1 vs Scale Plot...")
-    plt.figure(figsize=(9, 6))
+    # optimal config bar charts (same layer-coeff row as best_combinations)
+    print(
+        "Generating optimal F1 vs. scale + precision/recall bar plots (best config per model)..."
+    )
+    bc_df = best_combinations(
+        models,
+        coeffs,
+        results_dir,
+        save=False,
+        print_table=False,
+        csv_version=csv_version,
+        baseline_csv_at_root=baseline_csv_at_root,
+    )
 
-    best_f1_pts = []
-    for model in df_all["model"].unique():
-        subset = df_all[df_all["model"] == model]
-        if model in model_params:
-            best_f1 = subset["f1_score"].max()
-            params = model_params[model]
-            best_f1_pts.append({"model": model, "params": params, "best_f1": best_f1})
+    if (
+        bc_df is not None
+        and not bc_df.empty
+        and model_params
+        and set(bc_df["Model"]).intersection(model_params.keys())
+    ):
+        plot_base = bc_df[bc_df["Model"].isin(model_params.keys())].copy()
+        plot_base["params"] = plot_base["Model"].map(model_params)
+        plot_base = plot_base.sort_values("params")
+        model_order = plot_base["Model"].tolist()
 
-    if best_f1_pts:
-        best_f1_df = pd.DataFrame(best_f1_pts).sort_values("params")
-
-        # bar chart
-        ax = sns.barplot(
-            x="model",
-            y="best_f1",
-            data=best_f1_df,
-            hue="model",
-            palette="viridis",
-            legend=False,
+        # peak f1 only bar chart
+        plt.figure(figsize=(9, 6))
+        ax = plt.gca()
+        x = np.arange(len(model_order), dtype=float)
+        heights = plot_base["F1"].astype(float).tolist()
+        bar_width = 0.48
+        colors = plt.cm.viridis(np.linspace(0.12, 0.88, len(model_order)))
+        ax.bar(
+            x,
+            heights,
+            width=bar_width,
+            color=colors,
+            edgecolor="white",
+            linewidth=0.9,
         )
+        ax.set_xticks(x)
+        ax.set_xticklabels(model_order, rotation=0, ha="center")
+        ax.set_title("Optimal Steered F1 Score vs. Model Scale", pad=15)
+        ax.set_xlabel("Models", labelpad=15)
+        ax.set_ylabel("Max achieved F1 score")
+        ymax_f1 = float(max(heights))
+        ax.set_ylim(0, min(0.85, ymax_f1 * 1.2))
 
-        plt.title("Optimal Steered F1 Score vs. Model Scale", pad=15)
-        plt.xlabel("Model Structure")
-        plt.ylabel("Max Achieved F1 Score")
-
-        # explicit F1 score values above bars
-        for p in ax.patches:
-            val = p.get_height()
-            if val > 0:
-                ax.annotate(
-                    f"{val:.3f}",
-                    (p.get_x() + p.get_width() / 2.0, val),
-                    ha="center",
-                    va="bottom",
-                    fontsize=12,
-                    color="#2c3e50",
-                    xytext=(0, 6),
-                    textcoords="offset points",
-                    fontweight="bold",
-                )
-
-        plt.ylim(0, best_f1_df["best_f1"].max() * 1.20)
-        plt.xticks(rotation=15)
+        for xi, h in zip(x, heights):
+            ax.annotate(
+                f"{h:.2f}",
+                (xi, h),
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                color="#2c3e50",
+                xytext=(0, 4),
+                textcoords="offset points",
+                fontweight="bold",
+            )
 
         plt.tight_layout()
         if save and output_dir:
             plt.savefig(output_dir / "max_f1_vs_model_scale.png", bbox_inches="tight")
+
+        plt.show()
+
+        # precision & recall at that same best row, grouped bars
+        pr_colors = {"Precision": "#2E7BC8", "Recall": "#18A878"}
+        melted_pr = plot_base.melt(
+            id_vars=["Model"],
+            value_vars=["Precision", "Recall"],
+            var_name="metric",
+            value_name="value",
+        )
+
+        plt.figure(figsize=(9, 6))
+        ax_pr = sns.barplot(
+            data=melted_pr,
+            x="Model",
+            y="value",
+            hue="metric",
+            hue_order=["Precision", "Recall"],
+            order=model_order,
+            palette=pr_colors,
+            width=0.42,
+            gap=0.08,
+            edgecolor="white",
+            linewidth=0.8,
+        )
+
+        ax_pr.set_title(
+            "Precision and recall at best steering configuration",
+            pad=15,
+        )
+
+        ax_pr.set_xlabel("Models", labelpad=15)
+        ax_pr.set_ylabel("Score (mean across benchmark)")
+        ymax_pr = float(melted_pr["value"].max())
+        ax_pr.set_ylim(0, min(1.04, ymax_pr * 1.16))
+        plt.setp(ax_pr.get_xticklabels(), rotation=0, ha="center")
+        sns.move_legend(ax_pr, "upper right", title="")
+
+        for p in ax_pr.patches:
+            val = p.get_height()
+
+            if val <= 0 or np.isnan(val):
+                continue
+
+            ax_pr.annotate(
+                f"{val:.2f}",
+                (p.get_x() + p.get_width() / 2.0, val),
+                ha="center",
+                va="bottom",
+                fontsize=10,
+                color="#2c3e50",
+                xytext=(0, 4),
+                textcoords="offset points",
+                fontweight="bold",
+            )
+
+        plt.tight_layout()
+        if save and output_dir:
+            plt.savefig(
+                output_dir / "precision_recall_best_config.png",
+                bbox_inches="tight",
+            )
         plt.show()
     else:
         print(
-            "Model parameters for scaling plot not provided or matched. Skipping F1 vs Scale plot."
+            "Best combinations unavailable or model_params mismatch; skipping best-config bar plots."
         )
