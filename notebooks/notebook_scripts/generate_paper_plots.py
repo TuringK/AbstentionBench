@@ -5,7 +5,7 @@ import seaborn as sns
 from pathlib import Path
 from typing import Union, Optional, List, Dict
 
-from .summarize_metrics import filter_incomplete_layers
+from .summarize_metrics import filter_incomplete_layers, steering_results_csv_path
 
 
 def process_csv(path: Path, model_name: str, coeff: float, all_data: List):
@@ -34,6 +34,9 @@ def generate_plots(
     results_dir: Union[str, Path],
     output_dir: Optional[Union[str, Path]] = None,
     save: bool = False,
+    *,
+    csv_version: str = "v3",
+    baseline_csv_at_root: bool = False,
 ):
     """Generate and display the performance plots. Optionally save to PNG."""
     results_dir = Path(results_dir)
@@ -69,15 +72,13 @@ def generate_plots(
 
     for model_key, model_name in models.items():
         for coeff in coeffs:
-            if coeff == 1.0:
-                csv_path = results_dir / f"{model_key}_v1.csv"
-            else:
-                coeff_str = f"{coeff:.1f}".replace(".", "_")
-                csv_path = (
-                    results_dir
-                    / f"{model_key}_sweep"
-                    / f"{model_key}_v1_sweep_{coeff_str}.csv"
-                )
+            csv_path = steering_results_csv_path(
+                results_dir,
+                model_key,
+                coeff,
+                csv_version=csv_version,
+                baseline_csv_at_root=baseline_csv_at_root,
+            )
             process_csv(csv_path, model_name, coeff, all_data)
 
     if not all_data:

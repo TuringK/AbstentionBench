@@ -37,6 +37,32 @@ REQUIRED_DATASETS = [
 ]
 
 
+def steering_results_csv_path(
+    results_dir: Union[str, Path],
+    model_key: str,
+    coeff: float,
+    *,
+    csv_version: str = "v3",
+    baseline_csv_at_root: bool = False,
+) -> Path:
+    """Resolve path to a steering sweep CSV.
+
+    `baseline_csv_at_root=True` matches older layouts (e.g. v2): coefficient 1.0
+    lives at `{results_dir}/{model_key}_{csv_version}.csv`. Other coeffs live under
+    `{model_key}_sweep/`. With `baseline_csv_at_root=False` (v3), every coeff
+    including 1.0 lives at `{model_key}_sweep/{model_key}_{csv_version}_sweep_{coeff}.csv`.
+    """
+    results_dir = Path(results_dir)
+    coeff_str = f"{coeff:.1f}".replace(".", "_")
+    if baseline_csv_at_root and coeff == 1.0:
+        return results_dir / f"{model_key}_{csv_version}.csv"
+    return (
+        results_dir
+        / f"{model_key}_sweep"
+        / f"{model_key}_{csv_version}_sweep_{coeff_str}.csv"
+    )
+
+
 def filter_incomplete_layers(df: pd.DataFrame) -> pd.DataFrame:
     required = set(REQUIRED_DATASETS)
     counts = (
@@ -97,17 +123,18 @@ def print_model_vectors(
     results_dir: Union[str, Path],
     output_dir: Optional[Union[str, Path]] = None,
     save: bool = False,
+    *,
+    csv_version: str = "v3",
+    baseline_csv_at_root: bool = False,
 ) -> None:
     """Read a specific model/coefficient vectors result and print it. Optionally save."""
-    results_dir = Path(results_dir)
-
-    if coeff == 1.0:
-        csv_path = results_dir / f"{model_key}_v1.csv"
-    else:
-        coeff_str = f"{coeff:.1f}".replace(".", "_")
-        csv_path = (
-            results_dir / f"{model_key}_sweep" / f"{model_key}_v1_sweep_{coeff_str}.csv"
-        )
+    csv_path = steering_results_csv_path(
+        results_dir,
+        model_key,
+        coeff,
+        csv_version=csv_version,
+        baseline_csv_at_root=baseline_csv_at_root,
+    )
 
     if not csv_path.exists():
         print(f"Warning: Missing file: {csv_path}")

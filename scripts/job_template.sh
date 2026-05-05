@@ -12,6 +12,9 @@ module load CUDA/12.4
 
 export VLLM_USE_V1=0
 export HYDRA_FULL_ERROR=1
+# Avoid PyTorch Inductor -> Triton -> host gcc when profiling Gemma (and similar) in vLLM:
+# batch nodes with `module load GCC` can hit Assembler/Illegal-instruction or linker failures.
+export TORCH_COMPILE_DISABLE=1
 
 # Resolve paths for this array task
 LAYER_IDX="${SLURM_ARRAY_TASK_ID}"

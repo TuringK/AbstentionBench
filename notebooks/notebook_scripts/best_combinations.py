@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Union, Optional
 
-from .summarize_metrics import summarize_layer_metrics
+from .summarize_metrics import summarize_layer_metrics, steering_results_csv_path
 
 
 def best_combinations(
@@ -12,6 +12,9 @@ def best_combinations(
     output_dir: Optional[Union[str, Path]] = None,
     save: bool = False,
     print_table: bool = True,
+    *,
+    csv_version: str = "v3",
+    baseline_csv_at_root: bool = False,
 ) -> pd.DataFrame:
     """Find the best vector combinations for each model. Optionally save to CSV."""
     results_dir = Path(results_dir)
@@ -23,16 +26,13 @@ def best_combinations(
         best_coeff = None
 
         for coeff in coeffs:
-            if coeff == 1.0:
-                csv_path = results_dir / f"{model_key}_v1.csv"
-            else:
-                # 2.0 -> 2_0
-                coeff_str = f"{coeff:.1f}".replace(".", "_")
-                csv_path = (
-                    results_dir
-                    / f"{model_key}_sweep"
-                    / f"{model_key}_v1_sweep_{coeff_str}.csv"
-                )
+            csv_path = steering_results_csv_path(
+                results_dir,
+                model_key,
+                coeff,
+                csv_version=csv_version,
+                baseline_csv_at_root=baseline_csv_at_root,
+            )
 
             if not csv_path.exists():
                 print(f"Warning: Missing file: {csv_path}")
