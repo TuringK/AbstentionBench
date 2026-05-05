@@ -8,10 +8,12 @@ LICENSE file in the root directory of this source tree.
 Generates and saves model responses for  questions
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import BaseModel
 from torch.utils.data import DataLoader, SubsetRandomSampler
@@ -20,8 +22,11 @@ from recipe.abstention_datasets.abstract_abstention_dataset import (
     AbstentionDataset,
     Prompt,
 )
-from recipe.models import InferenceModel, VLLMReasoningChatModelBase
 from recipe.utils import permissive_makedirs
+
+if TYPE_CHECKING:
+    # runtime import would chain to `recipe.models` and heavyweight inference deps.
+    from recipe.models import InferenceModel
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +71,11 @@ def _collate_class_instances(batch):
 
 
 class InferencePipeline:
-    """Uses torch datasets for batched inference"""
+    """Run batched generation through a concrete `InferenceModel`.
+
+    `recipe.models` is imported only inside `run` so importing this class for type
+    hints does not load vLLM or other large inference stacks.
+    """
 
     def __init__(
         self,
@@ -96,6 +105,10 @@ class InferencePipeline:
             sampler=sampler,
             collate_fn=_collate_class_instances,
         )
+        # local import avoids loading `recipe.models` when this module was only imported
+        # for serialisation helpers upstream.
+        from recipe.models import VLLMReasoningChatModelBase
+
         for prompt_batch in batched_dataset:
             questions = [prompt.question for prompt in prompt_batch]
 
