@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Copyright (c) Meta Platforms, Inc. and affiliates.
 All rights reserved.
@@ -7,8 +9,6 @@ LICENSE file in the root directory of this source tree.
 """
 Generates and saves model responses for  questions
 """
-
-from __future__ import annotations
 
 import json
 import logging
