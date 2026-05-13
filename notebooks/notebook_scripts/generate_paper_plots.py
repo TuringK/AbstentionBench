@@ -226,7 +226,13 @@ def generate_plots(
     plt.title("Precision-Recall Pareto Frontiers", pad=15)
     plt.xlabel("Recall")
     plt.ylabel("Precision")
-    plt.legend(title="Model", loc="upper right", frameon=True, edgecolor="black")
+    plt.legend(
+        title="Model",
+        frameon=True,
+        edgecolor="black",
+        bbox_to_anchor=(1.02, 1),
+        loc="upper left",
+    )
     plt.tight_layout()
     if save and output_dir:
         plt.savefig(output_dir / "pr_tradeoff_pareto.png", bbox_inches="tight")

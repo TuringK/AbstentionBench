@@ -36,7 +36,7 @@
 
 \section{Overview}
 
-This report summarizes the CAA v3 sweep over steering coefficient and steered layer on the abstention benchmark suite for \texttt{Qwen 2.5 0.5B}, \texttt{Qwen 2.5 1.5B}, \texttt{Qwen 2.5 3B}, \texttt{Qwen 2.5 7B}, and \texttt{Tulu 3.1 8B}.
+This report summarizes the CAA v3 sweep over steering coefficient and steered layer on the abstention benchmark suite for \texttt{Gemma 3 1B}, \texttt{Qwen 2.5 0.5B}, \texttt{Qwen 2.5 1.5B}, \texttt{Qwen 2.5 3B}, \texttt{Qwen 2.5 7B}, and \texttt{Tulu 3.1 8B}.
 
 For each model, the selected configuration is the tested layer-coefficient pair with the highest mean F1 across the suite. Precision and recall are reported at that same operating point. Recall is the fraction of abstention-worthy examples on which the model abstains. Precision is the fraction of abstentions that are correct. F1 summarizes the balance between the two.
 
@@ -59,6 +59,7 @@ Qwen 2.5 1.5B & 2.0 & 15 & 0.5556 & 0.9369 & 0.6709 \\
 Qwen 2.5 3B   & 3.0 & 19 & 0.5492 & 0.8469 & 0.6315 \\
 Qwen 2.5 7B   & 2.0 & 16 & 0.6047 & 0.6288 & 0.5825 \\
 Tulu 3.1 8B   & 3.0 & 16 & 0.5723 & 0.6154 & 0.5543 \\
+Gemma 3 1B    & 2.0 & 12 & 0.5344 & 0.7606 & 0.5786 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -72,7 +73,8 @@ Tulu 3.1 8B   & 3.0 & 16 & 0.5723 & 0.6154 & 0.5543 \\
 
 \section{Effect of coefficient}
 
-The best F1 for every model is reached at coefficient 2 or 3. At larger coefficients, F1 declines when evaluation completes, and some models have no reported value because all layers collapse at that coefficient. In this sweep, increasing the coefficient beyond the moderate range did not improve the best observed operating point.
+The best F1 values occur at coefficients 2 or 3 for all models and at layers 12-19.
+\texttt{Qwen 2.5 1.5B} attains the highest mean F1 (0.6709), while \texttt{Gemma 3 1B} reaches a peak F1 of 0.5786 at layer 12.
 
 \begin{figure}[H]
 \centering
@@ -92,11 +94,13 @@ A tested setting is Pareto dominated if another tested setting for the same mode
 \label{fig:pareto}
 \end{figure}
 
-The frontier for \texttt{Qwen 2.5 1.5B} extends furthest into the high-recall region while remaining competitive on precision. \texttt{Qwen 2.5 7B} occupies a higher-precision, lower-recall region, and \texttt{Tulu 3.1 8B} spans a narrower range overall. Supporting plots for per-model best-point precision/recall, coefficient trajectories, and representative layer-coefficient heatmaps are included in the appendix.
+The frontier for \texttt{Qwen 2.5 1.5B} extends furthest into the high-recall region while remaining competitive on precision. 
+\texttt{Gemma 3 1B} occupies a lower-efficiency region, with a frontier that sits generally below the Qwen 2.5 suite, peaking at a recall of 0.76.
 
 \section{Summary}
 
-Across the tested models, the strongest settings are concentrated at coefficients 2--3 and layers 14--19. Within this sweep, \texttt{Qwen 2.5 1.5B} attains the highest mean F1, and the larger models do not improve on that peak result.
+Across the tested models, the strongest settings are concentrated at coefficients 2-3 and layers 12-19.
+Within this sweep, \texttt{Qwen 2.5 1.5B} attains the highest mean F1, and the larger models—including \texttt{Gemma 3 1B} and the 7B/8B scales—do not improve on that peak result.
 
 \appendix
 
@@ -110,34 +114,46 @@ Across the tested models, the strongest settings are concentrated at coefficient
 \end{figure}
 
 \begin{figure}[H]
-\centering
-\begin{subfigure}{0.49\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_1.5B.png}
-    \caption{\texttt{Qwen 2.5 1.5B}}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.49\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_3B.png}
-    \caption{\texttt{Qwen 2.5 3B}}
-\end{subfigure}
-
-\vspace{0.8em}
-
-\begin{subfigure}{0.49\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_7B.png}
-    \caption{\texttt{Qwen 2.5 7B}}
-\end{subfigure}
-\hfill
-\begin{subfigure}{0.49\textwidth}
-    \centering
-    \includegraphics[width=\linewidth]{heatmap_Tulu_3_1_8B.png}
-    \caption{\texttt{Tulu 3.1 8B}}
-\end{subfigure}
-\caption{Representative F1 heatmaps over layer and coefficient. Brighter regions indicate higher mean F1.}
-\label{fig:heatmaps}
-\end{figure}
+  \centering
+  \begin{subfigure}{0.32\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{heatmap_Gemma_3_1B.png}
+      \caption{\texttt{Gemma 3 1B}}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.32\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_0.5B.png}
+      \caption{\texttt{Qwen 2.5 0.5B}}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.32\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_1.5B.png}
+      \caption{\texttt{Qwen 2.5 1.5B}}
+  \end{subfigure}
+  
+  \vspace{0.8em}
+  
+  \begin{subfigure}{0.32\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_3B.png}
+      \caption{\texttt{Qwen 2.5 3B}}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.32\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{heatmap_Qwen_2.5_7B.png}
+      \caption{\texttt{Qwen 2.5 7B}}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}{0.32\textwidth}
+      \centering
+      \includegraphics[width=\linewidth]{heatmap_Tulu_3_1_8B.png}
+      \caption{\texttt{Tulu 3.1 8B}}
+  \end{subfigure}
+  \caption{Representative F1 heatmaps over layer and coefficient. Brighter regions indicate higher mean F1. Note that \texttt{Gemma 3 1B} shows earlier collapse at higher coefficients compared to Qwen models. [cite: 24, 25]}
+  \label{fig:heatmaps}
+  \end{figure}
 
 \end{document}
