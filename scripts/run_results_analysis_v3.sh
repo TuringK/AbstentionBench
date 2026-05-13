@@ -48,6 +48,7 @@ MODELS=(
   "Qwen2_5_1_5B_Instruct_DecayCPFSim_judge_CAA|qwen_1_5"
   "Qwen2_5_3B_Instruct_DecayCPFSim_judge_CAA|qwen_3"
   "Qwen2_5_7B_Instruct_DecayCPFSim_judge_CAA|qwen_7"
+  "Gemma3_1B_Instruct_DecayCPFSim_judge_CAA|gemma_1"
 )
 
 # Use underscore format to match directory naming: 1_0, 2_0, ... 10_0
