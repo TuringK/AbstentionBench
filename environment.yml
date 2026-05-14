@@ -1,4 +1,4 @@
-name: abstention-bench
+name: abstention-bench-gamma
 channels:
   - pytorch
   - conda-forge

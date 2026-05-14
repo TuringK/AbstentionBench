@@ -27,11 +27,11 @@ class FreshQADataset(AbstentionDataset):
 
     def _prepare_data(self):
         # Load the baseline questions and answers
-        data_baseline = pd.read_csv(self.path_baseline, skiprows=2)
+        data_baseline = pd.read_csv(self.path_baseline)
         data_baseline["source"] = "baseline"
 
         # Load the updated questions and answers
-        data_updated = pd.read_csv(self.path_updated, skiprows=2)
+        data_updated = pd.read_csv(self.path_updated)
         data_updated["source"] = "updated"
 
         # Concatenate and filter to only include the test set
