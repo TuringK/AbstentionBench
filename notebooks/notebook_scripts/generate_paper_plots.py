@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Union, Optional, List, Dict
 
 from .best_combinations import best_combinations
-from .summarize_metrics import filter_incomplete_layers, steering_results_csv_path
+from .summarize_metrics import (
+    filter_incomplete_layers,
+    load_rulebreakers_metrics,
+    steering_results_csv_path,
+)
 
 
 def process_csv(path: Path, model_name: str, coeff: float, all_data: List):
@@ -30,6 +34,131 @@ def process_csv(path: Path, model_name: str, coeff: float, all_data: List):
     all_data.append(summary)
 
 
+def plot_optimal_config_bars(
+    plot_base: pd.DataFrame,
+    model_order: List[str],
+    *,
+    save: bool,
+    output_dir: Optional[Path],
+    f1_title: str,
+    pr_title: str,
+    pr_ylabel: str,
+    f1_filename: str,
+    pr_filename: str,
+) -> None:
+    plt.figure(figsize=(9, 6))
+    ax = plt.gca()
+    x = np.arange(len(model_order), dtype=float)
+    heights = plot_base["F1"].astype(float).tolist()
+    bar_width = 0.48
+    colors = plt.cm.viridis(np.linspace(0.12, 0.88, len(model_order)))
+    ax.bar(
+        x,
+        heights,
+        width=bar_width,
+        color=colors,
+        edgecolor="white",
+        linewidth=0.9,
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(model_order, rotation=0, ha="center")
+    ax.set_title(f1_title, pad=15)
+    ax.set_xlabel("Models", labelpad=15)
+    ax.set_ylabel("Max achieved F1 score")
+    ymax_f1 = float(max(heights))
+    ax.set_ylim(0, min(0.85, ymax_f1 * 1.2))
+
+    for xi, h in zip(x, heights):
+        ax.annotate(
+            f"{h:.2f}",
+            (xi, h),
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            color="#2c3e50",
+            xytext=(0, 4),
+            textcoords="offset points",
+            fontweight="bold",
+        )
+
+    plt.tight_layout()
+    if save and output_dir:
+        plt.savefig(output_dir / f1_filename, bbox_inches="tight")
+
+    plt.show()
+
+    pr_colors = {"Precision": "#2E7BC8", "Recall": "#18A878"}
+    melted_pr = plot_base.melt(
+        id_vars=["Model"],
+        value_vars=["Precision", "Recall"],
+        var_name="metric",
+        value_name="value",
+    )
+
+    plt.figure(figsize=(9, 6))
+    ax_pr = sns.barplot(
+        data=melted_pr,
+        x="Model",
+        y="value",
+        hue="metric",
+        hue_order=["Precision", "Recall"],
+        order=model_order,
+        palette=pr_colors,
+        width=0.42,
+        gap=0.08,
+        edgecolor="white",
+        linewidth=0.8,
+    )
+
+    ax_pr.set_title(pr_title, pad=15)
+    ax_pr.set_xlabel("Models", labelpad=15)
+    ax_pr.set_ylabel(pr_ylabel)
+    ymax_pr = float(melted_pr["value"].max())
+    ax_pr.set_ylim(0, min(1.04, ymax_pr * 1.16))
+    plt.setp(ax_pr.get_xticklabels(), rotation=0, ha="center")
+    sns.move_legend(ax_pr, "upper right", title="")
+
+    for p in ax_pr.patches:
+        val = p.get_height()
+
+        if val <= 0 or np.isnan(val):
+            continue
+
+        ax_pr.annotate(
+            f"{val:.2f}",
+            (p.get_x() + p.get_width() / 2.0, val),
+            ha="center",
+            va="bottom",
+            fontsize=10,
+            color="#2c3e50",
+            xytext=(0, 4),
+            textcoords="offset points",
+            fontweight="bold",
+        )
+
+    plt.tight_layout()
+    if save and output_dir:
+        plt.savefig(output_dir / pr_filename, bbox_inches="tight")
+    plt.show()
+
+
+def prepare_bar_plot_base(
+    bc_df: pd.DataFrame, model_params: Dict[str, float]
+) -> Optional[tuple[pd.DataFrame, List[str]]]:
+    if (
+        bc_df is None
+        or bc_df.empty
+        or not model_params
+        or not set(bc_df["Model"]).intersection(model_params.keys())
+    ):
+        return None
+
+    plot_base = bc_df[bc_df["Model"].isin(model_params.keys())].copy()
+    plot_base["params"] = plot_base["Model"].map(model_params)
+    plot_base = plot_base.sort_values("params")
+    return plot_base, plot_base["Model"].tolist()
+
+
 def generate_plots(
     models: Dict[str, str],
     model_params: Dict[str, float],
@@ -40,6 +169,7 @@ def generate_plots(
     *,
     csv_version: str = "v3",
     baseline_csv_at_root: bool = False,
+    rulebreakers_subdir: Optional[str] = None,
 ):
     """Generate and display the performance plots. Optionally save to PNG."""
     results_dir = Path(results_dir)
@@ -252,121 +382,48 @@ def generate_plots(
         baseline_csv_at_root=baseline_csv_at_root,
     )
 
-    if (
-        bc_df is not None
-        and not bc_df.empty
-        and model_params
-        and set(bc_df["Model"]).intersection(model_params.keys())
-    ):
-        plot_base = bc_df[bc_df["Model"].isin(model_params.keys())].copy()
-        plot_base["params"] = plot_base["Model"].map(model_params)
-        plot_base = plot_base.sort_values("params")
-        model_order = plot_base["Model"].tolist()
-
-        # peak f1 only bar chart
-        plt.figure(figsize=(9, 6))
-        ax = plt.gca()
-        x = np.arange(len(model_order), dtype=float)
-        heights = plot_base["F1"].astype(float).tolist()
-        bar_width = 0.48
-        colors = plt.cm.viridis(np.linspace(0.12, 0.88, len(model_order)))
-        ax.bar(
-            x,
-            heights,
-            width=bar_width,
-            color=colors,
-            edgecolor="white",
-            linewidth=0.9,
+    prepared = prepare_bar_plot_base(bc_df, model_params)
+    if prepared is not None:
+        plot_base, model_order = prepared
+        plot_optimal_config_bars(
+            plot_base,
+            model_order,
+            save=save,
+            output_dir=output_dir,
+            f1_title="Optimal Steered F1 Score vs. Model Scale",
+            pr_title="Precision and recall at best steering configuration",
+            pr_ylabel="Score (mean across benchmark)",
+            f1_filename="max_f1_vs_model_scale.png",
+            pr_filename="precision_recall_best_config.png",
         )
-        ax.set_xticks(x)
-        ax.set_xticklabels(model_order, rotation=0, ha="center")
-        ax.set_title("Optimal Steered F1 Score vs. Model Scale", pad=15)
-        ax.set_xlabel("Models", labelpad=15)
-        ax.set_ylabel("Max achieved F1 score")
-        ymax_f1 = float(max(heights))
-        ax.set_ylim(0, min(0.85, ymax_f1 * 1.2))
-
-        for xi, h in zip(x, heights):
-            ax.annotate(
-                f"{h:.2f}",
-                (xi, h),
-                ha="center",
-                va="bottom",
-                fontsize=10,
-                color="#2c3e50",
-                xytext=(0, 4),
-                textcoords="offset points",
-                fontweight="bold",
-            )
-
-        plt.tight_layout()
-        if save and output_dir:
-            plt.savefig(output_dir / "max_f1_vs_model_scale.png", bbox_inches="tight")
-
-        plt.show()
-
-        # precision & recall at that same best row, grouped bars
-        pr_colors = {"Precision": "#2E7BC8", "Recall": "#18A878"}
-        melted_pr = plot_base.melt(
-            id_vars=["Model"],
-            value_vars=["Precision", "Recall"],
-            var_name="metric",
-            value_name="value",
-        )
-
-        plt.figure(figsize=(9, 6))
-        ax_pr = sns.barplot(
-            data=melted_pr,
-            x="Model",
-            y="value",
-            hue="metric",
-            hue_order=["Precision", "Recall"],
-            order=model_order,
-            palette=pr_colors,
-            width=0.42,
-            gap=0.08,
-            edgecolor="white",
-            linewidth=0.8,
-        )
-
-        ax_pr.set_title(
-            "Precision and recall at best steering configuration",
-            pad=15,
-        )
-
-        ax_pr.set_xlabel("Models", labelpad=15)
-        ax_pr.set_ylabel("Score (mean across benchmark)")
-        ymax_pr = float(melted_pr["value"].max())
-        ax_pr.set_ylim(0, min(1.04, ymax_pr * 1.16))
-        plt.setp(ax_pr.get_xticklabels(), rotation=0, ha="center")
-        sns.move_legend(ax_pr, "upper right", title="")
-
-        for p in ax_pr.patches:
-            val = p.get_height()
-
-            if val <= 0 or np.isnan(val):
-                continue
-
-            ax_pr.annotate(
-                f"{val:.2f}",
-                (p.get_x() + p.get_width() / 2.0, val),
-                ha="center",
-                va="bottom",
-                fontsize=10,
-                color="#2c3e50",
-                xytext=(0, 4),
-                textcoords="offset points",
-                fontweight="bold",
-            )
-
-        plt.tight_layout()
-        if save and output_dir:
-            plt.savefig(
-                output_dir / "precision_recall_best_config.png",
-                bbox_inches="tight",
-            )
-        plt.show()
     else:
         print(
             "Best combinations unavailable or model_params mismatch; skipping best-config bar plots."
         )
+
+    if rulebreakers_subdir is not None:
+        print("Generating Rulebreakers bar plots from pre-computed CSVs...")
+        rb_df = load_rulebreakers_metrics(
+            models,
+            results_dir,
+            csv_version=csv_version,
+            rulebreakers_subdir=rulebreakers_subdir,
+        )
+        rb_prepared = prepare_bar_plot_base(rb_df, model_params)
+        if rb_prepared is not None:
+            rb_plot_base, rb_model_order = rb_prepared
+            plot_optimal_config_bars(
+                rb_plot_base,
+                rb_model_order,
+                save=save,
+                output_dir=output_dir,
+                f1_title="Rulebreakers F1 at Optimal Steering Configuration",
+                pr_title="Rulebreakers precision and recall at best steering configuration",
+                pr_ylabel="Score on Rulebreakers",
+                f1_filename="rulebreakers_max_f1_vs_model_scale.png",
+                pr_filename="rulebreakers_precision_recall_best_config.png",
+            )
+        else:
+            print(
+                "Rulebreakers metrics unavailable or model_params mismatch; skipping rulebreakers bar plots."
+            )

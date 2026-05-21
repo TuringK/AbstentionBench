@@ -1,6 +1,8 @@
+import re
+
 import pandas as pd
 from pathlib import Path
-from typing import Union, Optional
+from typing import Union, Optional, Dict
 
 REQUIRED_DATASETS = [
     "ALCUNA",
@@ -61,6 +63,96 @@ def steering_results_csv_path(
         / f"{model_key}_sweep"
         / f"{model_key}_{csv_version}_sweep_{coeff_str}.csv"
     )
+
+
+def rulebreakers_results_csv_path(
+    results_dir: Union[str, Path],
+    model_key: str,
+    *,
+    csv_version: str = "v3",
+    rulebreakers_subdir: str = "rulenreakers",
+) -> Optional[Path]:
+    """Resolve the pre-computed rulebreakers CSV for a model.
+
+    Files are single-row summaries at the optimal (coeff, layer) from the main
+    sweep, e.g. ``gemma_1_v3_sweep_2_0_vec_12_rulebreakers.csv``.
+    """
+    rb_dir = Path(results_dir) / rulebreakers_subdir
+    if not rb_dir.is_dir():
+        return None
+
+    pattern = f"{model_key}_{csv_version}_sweep_*_vec_*_rulebreakers.csv"
+    matches = sorted(rb_dir.glob(pattern))
+    if not matches:
+        return None
+    if len(matches) > 1:
+        print(
+            f"Warning: multiple rulebreakers CSVs for {model_key}, using {matches[0].name}"
+        )
+    return matches[0]
+
+
+def _parse_rulebreakers_filename(
+    path: Path, model_key: str, csv_version: str
+) -> tuple[float, int]:
+    match = re.match(
+        rf"{re.escape(model_key)}_{re.escape(csv_version)}_sweep_(\d+_\d+)_vec_(\d+)_rulebreakers\.csv",
+        path.name,
+    )
+    if not match:
+        raise ValueError(f"Unexpected rulebreakers filename: {path.name}")
+
+    coeff = float(match.group(1).replace("_", "."))
+    layer = int(match.group(2))
+    return coeff, layer
+
+
+def load_rulebreakers_metrics(
+    models: Dict[str, str],
+    results_dir: Union[str, Path],
+    *,
+    csv_version: str = "v3",
+    rulebreakers_subdir: str = "rulenreakers",
+) -> pd.DataFrame:
+    """Load rulebreakers metrics into the same schema as ``best_combinations``."""
+    results_dir = Path(results_dir)
+    results = []
+
+    for model_key, model_name in models.items():
+        csv_path = rulebreakers_results_csv_path(
+            results_dir,
+            model_key,
+            csv_version=csv_version,
+            rulebreakers_subdir=rulebreakers_subdir,
+        )
+        if csv_path is None:
+            print(f"Warning: Missing rulebreakers file for {model_key}")
+            continue
+
+        try:
+            df = pd.read_csv(csv_path)
+            if df.empty:
+                print(f"Warning: Empty rulebreakers CSV for {csv_path}")
+                continue
+
+            row = df.iloc[0]
+            best_coeff, best_layer = _parse_rulebreakers_filename(
+                csv_path, model_key, csv_version
+            )
+            results.append(
+                {
+                    "Model": model_name,
+                    "Best Coeff": best_coeff,
+                    "Best Layer": best_layer,
+                    "Precision": row["precision"],
+                    "Recall": row["recall"],
+                    "F1": row["f1_score"],
+                }
+            )
+        except Exception as e:
+            print(f"Error processing {csv_path}: {e}")
+
+    return pd.DataFrame(results)
 
 
 def filter_incomplete_layers(df: pd.DataFrame) -> pd.DataFrame:
