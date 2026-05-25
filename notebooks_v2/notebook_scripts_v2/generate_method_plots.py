@@ -3,6 +3,7 @@ from typing import Dict, Optional
 
 import pandas as pd
 
+from .export_summary_tables import export_method_summary_csvs
 from .generate_caa_plots import _plot_method_split
 from .loaders.caa_sweep import load_caa_sweep_data
 from .loaders.flat_csv import load_flat_csv_method
@@ -44,6 +45,7 @@ def generate_method_plots(
     save: bool = True,
     show: bool = True,
     combined: bool = False,
+    export_summary_tables: bool = True,
 ) -> pd.DataFrame:
     """Cross-method: per-method bar pairs and optional combined comparison charts."""
     configure_plot_style()
@@ -60,6 +62,14 @@ def generate_method_plots(
 
     plot_df = to_plot_dataframe(all_rows)
     methods_found = sorted(plot_df["Method"].unique())
+
+    if export_summary_tables:
+        summary_dir = output_dir / "summary_tables"
+        export_method_summary_csvs(
+            plot_df,
+            summary_dir,
+            model_params=model_params,
+        )
 
     for method in methods_found:
         _plot_method_split(

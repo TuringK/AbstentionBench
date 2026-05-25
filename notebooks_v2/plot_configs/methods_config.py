@@ -108,6 +108,39 @@ DPO_MODELS = {
     },
 }
 
+GRPO_MODELS = {
+    "qwen_0_5": {
+        "display_name": "Qwen 2.5 0.5B",
+        "params_b": 0.5,
+        "csv": REPO_ROOT / "data/grpo/final/csvs/q0_5_res.csv",
+    },
+    "qwen_1_5": {
+        "display_name": "Qwen 2.5 1.5B",
+        "params_b": 1.5,
+        "csv": REPO_ROOT / "data/grpo/final/csvs/q1_5_res.csv",
+    },
+    "qwen_3": {
+        "display_name": "Qwen 2.5 3B",
+        "params_b": 3.0,
+        "csv": REPO_ROOT / "data/grpo/final/csvs/q3_0_res.csv",
+    },
+    "qwen_7": {
+        "display_name": "Qwen 2.5 7B",
+        "params_b": 7.0,
+        "csv": REPO_ROOT / "data/grpo/final/csvs/q7_0_res.csv",
+    },
+    "gemma_1": {
+        "display_name": "Gemma 3 1B",
+        "params_b": 1.0,
+        "csv": REPO_ROOT / "data/grpo/final/csvs/gemma_res.csv",
+    },
+    "tulu_8": {
+        "display_name": "Tulu 3.1 8B",
+        "params_b": 8.0,
+        "csv": REPO_ROOT / "data/grpo/final/csvs/llama_res.csv",
+    },
+}
+
 LORA_MODELS = {
     "qwen_0_5": {
         "display_name": "Qwen 2.5 0.5B",
@@ -174,6 +207,39 @@ DORA_MODELS = {
     },
 }
 
+VANILLA_MODELS = {
+    "qwen_0_5": {
+        "display_name": "Qwen 2.5 0.5B",
+        "params_b": 0.5,
+        "csv": REPO_ROOT / "data/vanilla_retagged_new_detector_csv/qwen_2_5_0_5b_vanilla.csv",
+    },
+    "qwen_1_5": {
+        "display_name": "Qwen 2.5 1.5B",
+        "params_b": 1.5,
+        "csv": REPO_ROOT / "data/vanilla_retagged_new_detector_csv/qwen_2_5_1_5b_vanilla.csv",
+    },
+    "qwen_3": {
+        "display_name": "Qwen 2.5 3B",
+        "params_b": 3.0,
+        "csv": REPO_ROOT / "data/vanilla_retagged_new_detector_csv/qwen_2_5_3b_vanilla.csv",
+    },
+    "qwen_7": {
+        "display_name": "Qwen 2.5 7B",
+        "params_b": 7.0,
+        "csv": REPO_ROOT / "data/vanilla_retagged_new_detector_csv/qwen_2_5_7b_vanilla.csv",
+    },
+    "gemma_1": {
+        "display_name": "Gemma 3 1B",
+        "params_b": 1.0,
+        "csv": REPO_ROOT / "data/vanilla_retagged_new_detector_csv/gemma_3_1b_vanilla.csv",
+    },
+    "tulu_8": {
+        "display_name": "Tulu 3.1 8B",
+        "params_b": 8.0,
+        "csv": REPO_ROOT / "data/vanilla_retagged_new_detector_csv/tulu_3_1_8b_vanilla.csv",
+    },
+}
+
 # Registry of methods to plot. To add a new method:
 #   1. Define a *_MODELS dict above (same shape as DPO_MODELS / LORA_MODELS).
 #   2. Add an entry here with the display name, loader type, and models dict.
@@ -182,6 +248,8 @@ DORA_MODELS = {
 METHODS = {
     "CAA": {"loader": "caa_sweep", "models": CAA_MODELS},
     "DPO": {"loader": "flat_csv", "models": DPO_MODELS},
+    "GRPO": {"loader": "flat_csv", "models": GRPO_MODELS},
     "LoRA": {"loader": "flat_csv", "models": LORA_MODELS},
     "DoRA": {"loader": "flat_csv", "models": DORA_MODELS},
+    "Vanilla": {"loader": "flat_csv", "models": VANILLA_MODELS},
 }
