@@ -14,6 +14,14 @@ from .summarize_metrics import (
 )
 
 
+def _effective_savefig_dpi(default: float = 300.0) -> float:
+    """Numeric DPI for savefig when rcParams uses the string sentinel ``'figure'``."""
+    dpi = plt.rcParams.get("savefig.dpi", default)
+    if dpi == "figure":
+        return float(plt.rcParams["figure.dpi"])
+    return float(dpi)
+
+
 def process_csv(path: Path, model_name: str, coeff: float, all_data: List):
     if not path.exists():
         return
@@ -46,6 +54,13 @@ def plot_optimal_config_bars(
     f1_filename: str,
     pr_filename: str,
 ) -> None:
+    _save_kw = dict(
+        bbox_inches="tight",
+        dpi=_effective_savefig_dpi(),
+        pad_inches=0.18,
+        facecolor=plt.rcParams.get("savefig.facecolor", "white"),
+    )
+
     plt.figure(figsize=(9, 6))
     ax = plt.gca()
     x = np.arange(len(model_order), dtype=float)
@@ -83,7 +98,7 @@ def plot_optimal_config_bars(
 
     plt.tight_layout()
     if save and output_dir:
-        plt.savefig(output_dir / f1_filename, bbox_inches="tight")
+        plt.savefig(output_dir / f1_filename, **_save_kw)
 
     plt.show()
 
@@ -104,7 +119,7 @@ def plot_optimal_config_bars(
         hue_order=["Precision", "Recall"],
         order=model_order,
         palette=pr_colors,
-        width=0.42,
+        width=0.55,
         gap=0.08,
         edgecolor="white",
         linewidth=0.8,
@@ -114,9 +129,17 @@ def plot_optimal_config_bars(
     ax_pr.set_xlabel("Models", labelpad=15)
     ax_pr.set_ylabel(pr_ylabel)
     ymax_pr = float(melted_pr["value"].max())
-    ax_pr.set_ylim(0, min(1.04, ymax_pr * 1.16))
+    # Headroom above max bar height for annotations (scores are in ~[0, 1])
+    ax_pr.set_ylim(0, ymax_pr + 0.14)
     plt.setp(ax_pr.get_xticklabels(), rotation=0, ha="center")
-    sns.move_legend(ax_pr, "upper right", title="")
+    sns.move_legend(
+        ax_pr,
+        loc="upper left",
+        bbox_to_anchor=(1.02, 1.0),
+        borderaxespad=0,
+        frameon=True,
+        title="",
+    )
 
     for p in ax_pr.patches:
         val = p.get_height()
@@ -138,7 +161,7 @@ def plot_optimal_config_bars(
 
     plt.tight_layout()
     if save and output_dir:
-        plt.savefig(output_dir / pr_filename, bbox_inches="tight")
+        plt.savefig(output_dir / pr_filename, **_save_kw)
     plt.show()
 
 
@@ -170,6 +193,7 @@ def generate_plots(
     csv_version: str = "v3",
     baseline_csv_at_root: bool = False,
     rulebreakers_subdir: Optional[str] = None,
+    rulebreakers_output_dir: Optional[Union[str, Path]] = None,
 ):
     """Generate and display the performance plots. Optionally save to PNG."""
     results_dir = Path(results_dir)
@@ -403,6 +427,14 @@ def generate_plots(
 
     if rulebreakers_subdir is not None:
         print("Generating Rulebreakers bar plots from pre-computed CSVs...")
+        rb_out = (
+            Path(rulebreakers_output_dir)
+            if rulebreakers_output_dir is not None
+            else output_dir
+        )
+        if save and rb_out is not None:
+            rb_out.mkdir(parents=True, exist_ok=True)
+
         rb_df = load_rulebreakers_metrics(
             models,
             results_dir,
@@ -416,7 +448,7 @@ def generate_plots(
                 rb_plot_base,
                 rb_model_order,
                 save=save,
-                output_dir=output_dir,
+                output_dir=rb_out,
                 f1_title="Rulebreakers F1 at Optimal Steering Configuration",
                 pr_title="Rulebreakers precision and recall at best steering configuration",
                 pr_ylabel="Score on Rulebreakers",
