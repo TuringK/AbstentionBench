@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Sequence
 
 import pandas as pd
 from tabulate import tabulate
 
 from .metrics_schema import Split
-
-DEFAULT_METHOD_ORDER = ["Vanilla", "DPO", "GRPO", "DoRA", "LoRA", "CAA"]
 
 METRIC_COLUMNS: dict[str, str] = {
     "f1": "F1",
@@ -19,17 +17,13 @@ METRIC_COLUMNS: dict[str, str] = {
 }
 
 
-def _model_order(model_params: Mapping[str, float]) -> list[str]:
-    return sorted(model_params.keys(), key=lambda model: model_params[model])
-
-
 def build_method_summary_table(
     plot_df: pd.DataFrame,
     *,
     split: Split,
     metric: str,
     model_order: Sequence[str],
-    method_order: Sequence[str] = DEFAULT_METHOD_ORDER,
+    method_order: Sequence[str],
 ) -> pd.DataFrame:
     """Pivot loaded plot data into a wide table: rows=models, columns=methods."""
     if metric not in METRIC_COLUMNS:
@@ -49,16 +43,15 @@ def export_method_summary_csvs(
     plot_df: pd.DataFrame,
     output_dir: Path,
     *,
-    model_params: Mapping[str, float],
+    model_order: Sequence[str],
+    method_order: Sequence[str],
     splits: Sequence[Split] = ("in_domain", "rulebreakers"),
-    method_order: Sequence[str] = DEFAULT_METHOD_ORDER,
     log_tables: bool = True,
 ) -> dict[str, Path]:
     """Write F1 / precision / recall summary CSVs and log their contents."""
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    models = _model_order(model_params)
     written: dict[str, Path] = {}
 
     for split in splits:
@@ -72,7 +65,7 @@ def export_method_summary_csvs(
                 plot_df,
                 split=split,
                 metric=metric,
-                model_order=models,
+                model_order=model_order,
                 method_order=method_order,
             )
             path = output_dir / f"{split}_{metric}.csv"

@@ -16,6 +16,40 @@ MODEL_PARAMS = {
     "Gemma 3 1B": 1.0,
 }
 
+MODEL_ORDER = [
+    "Qwen 2.5 0.5B",
+    "Qwen 2.5 1.5B",
+    "Qwen 2.5 3B",
+    "Qwen 2.5 7B",
+    "Gemma 3 1B",
+    "Tulu 3.1 8B",
+]
+
+METHOD_ORDER = ["Vanilla", "LoRA", "DoRA", "DPO", "GRPO", "SPT-100", "HPT-FS", "CAA"]
+
+# Overlay this method on each method's F1-vs-scale charts. None disables comparison.
+MACRO_F1_BASELINE_METHOD = "Vanilla"
+
+# Save DPI for wide combined comparison charts (default per-method plots use 300).
+COMBINED_PLOT_DPI = 300
+
+
+def resolve_model_order(
+    model_params: dict[str, float],
+    model_order: list[str] | None = None,
+) -> list[str]:
+    order = model_order or sorted(model_params, key=model_params.get)
+    return [model for model in order if model in model_params]
+
+
+def resolve_method_order(
+    methods_found: list[str] | set[str],
+    method_order: list[str] | None = None,
+) -> list[str]:
+    found = set(methods_found)
+    order = method_order or sorted(found)
+    return [method for method in order if method in found]
+
 
 def sweep_csv(model_key: str, coeff: float) -> Path:
     coeff_str = f"{coeff:.1f}".replace(".", "_")
@@ -240,6 +274,141 @@ VANILLA_MODELS = {
     },
 }
 
+SPT_20_MODELS = {
+
+    "qwen_0_5": {
+        "display_name": "Qwen 2.5 0.5B",
+        "params_b": 0.5,
+        "csv": REPO_ROOT / "data/soft_prompt/20tok/qwen0_5_soft_20tok.csv",
+    },
+    "qwen_1_5": {
+        "display_name": "Qwen 2.5 1.5B",
+        "params_b": 1.5,
+        "csv": REPO_ROOT / "data/soft_prompt/20tok/qwen1_5_soft_20tok.csv",
+    },
+    "qwen_3": {
+        "display_name": "Qwen 2.5 3B",
+        "params_b": 3.0,
+        "csv": REPO_ROOT / "data/soft_prompt/20tok/qwen3_soft_20tok.csv",
+    },
+    "qwen_7": {
+        "display_name": "Qwen 2.5 7B",
+        "params_b": 7.0,
+        "csv": REPO_ROOT / "data/soft_prompt/20tok/qwen7_soft_20tok.csv",
+    },
+    "gemma_1": {
+        "display_name": "Gemma 3 1B",
+        "params_b": 1.0,
+        "csv": REPO_ROOT / "data/soft_prompt/20tok/gemma1_soft_20tok.csv",
+    },
+    "tulu_8": {
+        "display_name": "Tulu 3.1 8B",
+        "params_b": 8.0,
+        "csv": REPO_ROOT / "data/soft_prompt/20tok/tulu8_soft_20tok.csv",
+    },
+}
+
+SPT_100_MODELS = {
+    "qwen_0_5": {
+        "display_name": "Qwen 2.5 0.5B",
+        "params_b": 0.5,
+        "csv": REPO_ROOT / "data/soft_prompt/100tok/qwen0_5_soft_100tok.csv",
+    },
+    "qwen_1_5": {
+        "display_name": "Qwen 2.5 1.5B",
+        "params_b": 1.5,
+        "csv": REPO_ROOT / "data/soft_prompt/100tok/qwen1_5_soft_100tok.csv",
+    },
+    "qwen_3": {
+        "display_name": "Qwen 2.5 3B",
+        "params_b": 3.0,
+        "csv": REPO_ROOT / "data/soft_prompt/100tok/qwen3_soft_100tok.csv",
+    },
+    "qwen_7": {
+        "display_name": "Qwen 2.5 7B",
+        "params_b": 7.0,
+        "csv": REPO_ROOT / "data/soft_prompt/100tok/qwen7_soft_100tok.csv",
+    },
+    "gemma_1": {
+        "display_name": "Gemma 3 1B",
+        "params_b": 1.0,
+        "csv": REPO_ROOT / "data/soft_prompt/100tok/gemma1_soft_100tok.csv",
+    },
+    "tulu_8": {
+        "display_name": "Tulu 3.1 8B",
+        "params_b": 8.0,
+        "csv": REPO_ROOT / "data/soft_prompt/100tok/tulu8_soft_100tok.csv",
+    },
+}
+
+HPT_SS_MODELS = {
+
+    "qwen_0_5": {
+        "display_name": "Qwen 2.5 0.5B",
+        "params_b": 0.5,
+        "csv": REPO_ROOT / "data/hard_prompt/single_shot/qwen0_5_hpss.csv",
+    },
+    "qwen_1_5": {
+        "display_name": "Qwen 2.5 1.5B",
+        "params_b": 1.5,
+        "csv": REPO_ROOT / "data/hard_prompt/single_shot/qwen1_5_hpss.csv",
+    },
+    "qwen_3": {
+        "display_name": "Qwen 2.5 3B",
+        "params_b": 3.0,
+        "csv": REPO_ROOT / "data/hard_prompt/single_shot/qwen3_hpss.csv",
+    },
+    "qwen_7": {
+        "display_name": "Qwen 2.5 7B",
+        "params_b": 7.0,
+        "csv": REPO_ROOT / "data/hard_prompt/single_shot/qwen7_hpss.csv",
+    },
+    "gemma_1": {
+        "display_name": "Gemma 3 1B",
+        "params_b": 1.0,
+        "csv": REPO_ROOT / "data/hard_prompt/single_shot/gemma1_hpss.csv",
+    },
+    "tulu_8": {
+        "display_name": "Tulu 3.1 8B",
+        "params_b": 8.0,
+        "csv": REPO_ROOT / "data/hard_prompt/single_shot/tulu8_hpss.csv",
+    },
+}
+
+HPT_FS_MODELS = {
+
+    "qwen_0_5": {
+        "display_name": "Qwen 2.5 0.5B",
+        "params_b": 0.5,
+        "csv": REPO_ROOT / "data/hard_prompt/few_shot/qwen0_5_hpfs.csv",
+    },
+    "qwen_1_5": {
+        "display_name": "Qwen 2.5 1.5B",
+        "params_b": 1.5,
+        "csv": REPO_ROOT / "data/hard_prompt/few_shot/qwen1_5_hpfs.csv",
+    },
+    "qwen_3": {
+        "display_name": "Qwen 2.5 3B",
+        "params_b": 3.0,
+        "csv": REPO_ROOT / "data/hard_prompt/few_shot/qwen3_hpfs.csv",
+    },
+    "qwen_7": {
+        "display_name": "Qwen 2.5 7B",
+        "params_b": 7.0,
+        "csv": REPO_ROOT / "data/hard_prompt/few_shot/qwen7_hpfs.csv",
+    },
+    "gemma_1": {
+        "display_name": "Gemma 3 1B",
+        "params_b": 1.0,
+        "csv": REPO_ROOT / "data/hard_prompt/few_shot/gemma1_hpfs.csv",
+    },
+    "tulu_8": {
+        "display_name": "Tulu 3.1 8B",
+        "params_b": 8.0,
+        "csv": REPO_ROOT / "data/hard_prompt/few_shot/tulu8_hpfs.csv",
+    },
+}
+
 # Registry of methods to plot. To add a new method:
 #   1. Define a *_MODELS dict above (same shape as DPO_MODELS / LORA_MODELS).
 #   2. Add an entry here with the display name, loader type, and models dict.
@@ -252,4 +421,8 @@ METHODS = {
     "LoRA": {"loader": "flat_csv", "models": LORA_MODELS},
     "DoRA": {"loader": "flat_csv", "models": DORA_MODELS},
     "Vanilla": {"loader": "flat_csv", "models": VANILLA_MODELS},
+    # "SPT-20": {"loader": "flat_csv", "models": SPT_20_MODELS},
+    "SPT-100": {"loader": "flat_csv", "models": SPT_100_MODELS},
+    "HPT-SS": {"loader": "flat_csv", "models": HPT_SS_MODELS},
+    "HPT-FS": {"loader": "flat_csv", "models": HPT_FS_MODELS},
 }

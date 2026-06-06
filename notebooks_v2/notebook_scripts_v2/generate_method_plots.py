@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence
 
 import pandas as pd
 
@@ -46,11 +46,28 @@ def generate_method_plots(
     show: bool = True,
     combined: bool = False,
     export_summary_tables: bool = True,
+    model_order: Optional[Sequence[str]] = None,
+    method_order: Optional[Sequence[str]] = None,
+    macro_f1_baseline_method: Optional[str] = None,
+    combined_plot_dpi: Optional[float] = None,
+    combined_horizontal: bool = False,
 ) -> pd.DataFrame:
     """Cross-method: per-method bar pairs and optional combined comparison charts."""
+    from plot_configs.methods_config import (
+        COMBINED_PLOT_DPI,
+        MACRO_F1_BASELINE_METHOD,
+        METHOD_ORDER,
+        MODEL_ORDER,
+        resolve_method_order,
+        resolve_model_order,
+    )
+
     configure_plot_style()
     output_dir = Path(output_dir)
     rb_out = Path(rulebreakers_output_dir or output_dir.parent / "v3_rulebreakers")
+
+    resolved_model_order = resolve_model_order(model_params, model_order or MODEL_ORDER)
+    resolved_method_order = method_order or METHOD_ORDER
 
     all_rows = []
     for method, spec in methods.items():
@@ -61,16 +78,32 @@ def generate_method_plots(
         return pd.DataFrame()
 
     plot_df = to_plot_dataframe(all_rows)
-    methods_found = sorted(plot_df["Method"].unique())
+    methods_found = resolve_method_order(
+        plot_df["Method"].unique(),
+        resolved_method_order,
+    )
+    baseline_method = (
+        macro_f1_baseline_method
+        if macro_f1_baseline_method is not None
+        else MACRO_F1_BASELINE_METHOD
+    )
+    resolved_combined_dpi = (
+        combined_plot_dpi if combined_plot_dpi is not None else COMBINED_PLOT_DPI
+    )
 
     if export_summary_tables:
         summary_dir = output_dir / "summary_tables"
         export_method_summary_csvs(
             plot_df,
             summary_dir,
-            model_params=model_params,
+            model_order=resolved_model_order,
+            method_order=methods_found,
         )
 
+    plot_kwargs = {
+        "model_order": resolved_model_order,
+        "macro_f1_baseline_method": baseline_method,
+    }
     for method in methods_found:
         _plot_method_split(
             plot_df,
@@ -81,6 +114,7 @@ def generate_method_plots(
             rb_output_dir=rb_out / method,
             save=save,
             show=show,
+            **plot_kwargs,
         )
         _plot_method_split(
             plot_df,
@@ -91,6 +125,7 @@ def generate_method_plots(
             rb_output_dir=rb_out / method,
             save=save,
             show=show,
+            **plot_kwargs,
         )
 
     if combined:
@@ -98,10 +133,11 @@ def generate_method_plots(
         if save:
             combined_dir.mkdir(parents=True, exist_ok=True)
 
-        model_order = sorted(
-            model_params.keys(),
-            key=lambda m: model_params[m],
-        )
+        chart_model_order = [
+            model
+            for model in resolved_model_order
+            if model in plot_df["Model"].values
+        ]
         for split, f1_name, pr_name in [
             (
                 "in_domain",
@@ -119,13 +155,16 @@ def generate_method_plots(
                 continue
             plot_combined_method_bars(
                 subset,
-                [m for m in model_order if m in subset["Model"].values],
+                chart_model_order,
+                method_order=methods_found,
                 save=save,
                 output_dir=combined_dir,
                 split=split,
                 f1_filename=f1_name,
                 pr_filename=pr_name,
                 show=show,
+                save_dpi=resolved_combined_dpi,
+                horizontal=combined_horizontal,
             )
 
     return plot_df
